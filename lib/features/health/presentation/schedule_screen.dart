@@ -1,0 +1,278 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../access/data/access_models.dart';
+import '../../home/data/home_models.dart';
+import 'history_controller.dart';
+
+/// Formulário mínimo de agendamento — cria a consulta DE VERDADE (POST /appointments).
+class ScheduleScreen extends StatefulWidget {
+  const ScheduleScreen({super.key, required this.controller, required this.patientId});
+  final HistoryController controller;
+  final String patientId;
+
+  @override
+  State<ScheduleScreen> createState() => _ScheduleScreenState();
+}
+
+class _ScheduleScreenState extends State<ScheduleScreen> {
+  List<DoctorLite>? _doctors;
+  String? _loadError;
+  DoctorLite? _doctor;
+  AppointmentType _type = AppointmentType.inPerson;
+  DateTime? _date;
+  TimeOfDay? _time;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDoctors();
+  }
+
+  Future<void> _loadDoctors() async {
+    try {
+      final d = await widget.controller.loadDoctors();
+      if (!mounted) return;
+      setState(() => _doctors = d);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadError = 'Não foi possível carregar a lista de médicos.');
+    }
+  }
+
+  bool get _teleUnavailable =>
+      _type == AppointmentType.telemedicine && _doctor != null && !_doctor!.acceptsTelemedicine;
+
+  DateTime? get _start {
+    if (_date == null || _time == null) return null;
+    return DateTime(_date!.year, _date!.month, _date!.day, _time!.hour, _time!.minute);
+  }
+
+  bool get _canSubmit {
+    final s = _start;
+    return _doctor != null && s != null && s.isAfter(DateTime.now()) && !_teleUnavailable && !_submitting;
+  }
+
+  Future<void> _submit() async {
+    final start = _start!;
+    setState(() => _submitting = true);
+    final err = await widget.controller.schedule(
+      patientId: widget.patientId,
+      doctorId: _doctor!.id,
+      type: _type,
+      start: start,
+    );
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    if (err == null) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.tealDark,
+        content: Text('Consulta agendada com sucesso.', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.stateDanger,
+        content: Text(err, style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Row(
+                children: [
+                  InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(
+                        color: AppColors.card, shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Icon(Icons.chevron_left, size: 22, color: AppColors.text),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('Agendar consulta',
+                      style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+                children: [
+                  _label('Médico'),
+                  const SizedBox(height: 8),
+                  _doctorField(),
+                  const SizedBox(height: 20),
+                  _label('Tipo de consulta'),
+                  const SizedBox(height: 8),
+                  _typeToggle(),
+                  if (_teleUnavailable) ...[
+                    const SizedBox(height: 8),
+                    Text('Este médico não oferece teleconsulta. Escolha Presencial ou outro médico.',
+                        style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.stateDanger)),
+                  ],
+                  const SizedBox(height: 20),
+                  _label('Data e horário'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: _pickerField(
+                        icon: Icons.calendar_today_outlined,
+                        text: _date == null ? 'Data' : '${_date!.day}/${_date!.month}/${_date!.year}',
+                        onTap: _pickDate,
+                      )),
+                      const SizedBox(width: 10),
+                      Expanded(child: _pickerField(
+                        icon: Icons.schedule,
+                        text: _time == null ? 'Horário' : _time!.format(context),
+                        onTap: _pickTime,
+                      )),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: _canSubmit ? _submit : null,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 22, height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                      : const Text('Confirmar agendamento'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String t) => Text(t,
+      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text));
+
+  Widget _doctorField() {
+    if (_loadError != null) {
+      return Text(_loadError!, style: GoogleFonts.poppins(fontSize: 12.5, color: AppColors.stateDanger));
+    }
+    if (_doctors == null) {
+      return const SizedBox(height: 40, child: Center(child: CircularProgressIndicator(color: AppColors.brand)));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.section,
+        borderRadius: BorderRadius.circular(AppTheme.radiusInner),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<DoctorLite>(
+          isExpanded: true,
+          value: _doctor,
+          hint: Text('Selecione um médico', style: GoogleFonts.poppins(fontSize: 14, color: AppColors.textSecondary)),
+          items: [
+            for (final d in _doctors!)
+              DropdownMenuItem(
+                value: d,
+                child: Text('${d.fullName}${d.specialty != null ? ' · ${d.specialty}' : ''}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(fontSize: 14, color: AppColors.text)),
+              ),
+          ],
+          onChanged: (v) => setState(() => _doctor = v),
+        ),
+      ),
+    );
+  }
+
+  Widget _typeToggle() {
+    return Row(
+      children: [
+        for (final t in [AppointmentType.inPerson, AppointmentType.telemedicine])
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: GestureDetector(
+              onTap: () => setState(() => _type = t),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                decoration: BoxDecoration(
+                  color: _type == t ? AppColors.brand : AppColors.card,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: _type == t ? AppColors.brand : AppColors.border),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(t.icon, size: 16, color: _type == t ? Colors.white : AppColors.textSecondary),
+                  const SizedBox(width: 6),
+                  Text(t.label,
+                      style: GoogleFonts.poppins(
+                          fontSize: 13, fontWeight: FontWeight.w600,
+                          color: _type == t ? Colors.white : AppColors.text)),
+                ]),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _pickerField({required IconData icon, required String text, required VoidCallback onTap}) {
+    final filled = text != 'Data' && text != 'Horário';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: AppColors.section,
+          borderRadius: BorderRadius.circular(AppTheme.radiusInner),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 10),
+          Text(text,
+              style: GoogleFonts.poppins(
+                  fontSize: 14, color: filled ? AppColors.text : AppColors.textSecondary)),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 180)),
+    );
+    if (d != null) setState(() => _date = d);
+  }
+
+  Future<void> _pickTime() async {
+    final t = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));
+    if (t != null) setState(() => _time = t);
+  }
+}
