@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passCtrl = TextEditingController(text: 'Paciente@12345');
   final _formKey = GlobalKey<FormState>();
   bool _obscure = true;
+  bool _errorDismissed = false;
 
   @override
   void dispose() {
@@ -32,6 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
+    setState(() => _errorDismissed = false); // um novo erro volta a aparecer
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthController>();
     final ok = await auth.login(_emailCtrl.text, _passCtrl.text);
@@ -65,107 +67,128 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(28, 24, 28, 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                        const SizedBox(height: 12),
-                        const MeLogoSeal(logoHeight: 76),
-                        const SizedBox(height: 28),
-                        Text(
-                          'Sua saúde é sua.\nSó sua.',
-                          style: GoogleFonts.poppins(
-                            fontSize: 34,
-                            height: 1.08,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.text,
-                            letterSpacing: -1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Seu prontuário, exames e histórico num lugar só — '
-                          'na sua conta. Quem quiser ver, pede a você.',
-                          style: GoogleFonts.poppins(
-                            fontSize: 15,
-                            height: 1.6,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        const MeChip(
-                          icon: Icons.lock_outline,
-                          label: 'Criptografado e sob o seu controle',
-                        ),
-                        const SizedBox(height: 36),
-                        _LoginForm(
-                          formKey: _formKey,
-                          emailCtrl: _emailCtrl,
-                          passCtrl: _passCtrl,
-                          obscure: _obscure,
-                          onToggleObscure: () =>
-                              setState(() => _obscure = !_obscure),
-                          onSubmit: _submit,
-                        ),
-                        if (auth.errorMessage != null) ...[
-                          const SizedBox(height: 14),
-                          _ErrorBanner(message: auth.errorMessage!),
-                        ],
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton(
-                            onPressed: auth.loading ? null : _submit,
-                            child: auth.loading
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.4,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Text('Entrar'),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: OutlinedButton.icon(
-                            onPressed: auth.loading
-                                ? null
-                                : () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        behavior: SnackBarBehavior.floating,
-                                        content: Text(
-                                          'Login com Google chega numa próxima etapa.',
-                                          style: GoogleFonts.poppins(),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                            icon: const Icon(Icons.g_mobiledata, size: 28),
-                            label: const Text('Entrar com Google'),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Center(
-                          child: Text(
-                            'Ao entrar você concorda com os Termos e a '
-                            'Política de Privacidade.',
-                            textAlign: TextAlign.center,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Fica sem scroll em repouso (o Spacer absorve a folga); só rola
+              // se o teclado reduzir muito a altura disponível — evitando overflow.
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 16, 28, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // --- Bloco marca (topo) ---
+                          const MeLogo(height: 54),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Sua saúde é sua.\nSó sua.',
                             style: GoogleFonts.poppins(
-                              fontSize: 11.5,
+                              fontSize: 28,
+                              height: 1.1,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.text,
+                              letterSpacing: -1,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Seu prontuário, exames e histórico num lugar só — '
+                            'na sua conta. Quem quiser ver, pede a você.',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              height: 1.5,
                               color: AppColors.textSecondary,
                             ),
                           ),
-                        ),
-              ],
-            ),
+                          const SizedBox(height: 16),
+                          const MeChip(
+                            icon: Icons.lock_outline,
+                            label: 'Criptografado e sob o seu controle',
+                          ),
+                          // Respiro flexível 1 (igual ao de baixo) → distribui a
+                          // folga de forma equilibrada, sem um buraco único.
+                          const Spacer(flex: 1),
+                          // --- Bloco campos (centro) ---
+                          if (auth.errorMessage != null && !_errorDismissed) ...[
+                            _ErrorBanner(
+                              message: auth.errorMessage!,
+                              onClose: () => setState(() => _errorDismissed = true),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          _LoginForm(
+                            formKey: _formKey,
+                            emailCtrl: _emailCtrl,
+                            passCtrl: _passCtrl,
+                            obscure: _obscure,
+                            onToggleObscure: () =>
+                                setState(() => _obscure = !_obscure),
+                            onSubmit: _submit,
+                          ),
+                          // Respiro flexível 2 (igual ao de cima).
+                          const Spacer(flex: 1),
+                          // --- Bloco ações (base) ---
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: auth.loading ? null : _submit,
+                              child: auth.loading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.4,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Entrar'),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: OutlinedButton.icon(
+                              onPressed: auth.loading
+                                  ? null
+                                  : () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          behavior: SnackBarBehavior.floating,
+                                          content: Text(
+                                            'Login com Google chega numa próxima etapa.',
+                                            style: GoogleFonts.poppins(),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                              icon: const Icon(Icons.g_mobiledata, size: 28),
+                              label: const Text('Entrar com Google'),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Text(
+                              'Ao entrar você concorda com os Termos e a '
+                              'Política de Privacidade.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.poppins(
+                                fontSize: 11.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -264,20 +287,22 @@ class _FieldLabel extends StatelessWidget {
 }
 
 class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
+  const _ErrorBanner({required this.message, required this.onClose});
   final String message;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
       decoration: BoxDecoration(
         color: AppColors.brandTint,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.stateDanger.withValues(alpha: 0.3)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const Icon(Icons.error_outline, color: AppColors.stateDanger, size: 20),
           const SizedBox(width: 10),
@@ -289,6 +314,15 @@ class _ErrorBanner extends StatelessWidget {
                 color: AppColors.stateDanger,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onClose,
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(Icons.close, color: AppColors.stateDanger, size: 18),
             ),
           ),
         ],
