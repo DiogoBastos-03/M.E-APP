@@ -7,6 +7,8 @@ import '../../access/data/access_repository.dart';
 import '../../access/presentation/access_controller.dart';
 import '../../access/presentation/access_tab.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../documents/data/medical_documents_repository.dart';
+import '../../documents/presentation/medical_documents_controller.dart';
 import '../../exams/data/exams_repository.dart';
 import '../../exams/presentation/exams_controller.dart';
 import '../../exams/presentation/saude_tab.dart';
@@ -43,6 +45,11 @@ class AppShell extends StatelessWidget {
         ChangeNotifierProvider(
           create: (ctx) =>
               ExamsController(ExamsRepository(ctx.read<AuthController>().api))..load(),
+        ),
+        ChangeNotifierProvider(
+          create: (ctx) => MedicalDocumentsController(
+              MedicalDocumentsRepository(ctx.read<AuthController>().api))
+            ..load(),
         ),
         ChangeNotifierProvider(
           create: (ctx) =>

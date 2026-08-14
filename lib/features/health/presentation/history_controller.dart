@@ -50,20 +50,25 @@ class HistoryController extends ChangeNotifier {
 
   Future<List<DoctorLite>> loadDoctors() => _repo.getDoctors();
 
-  /// Agenda uma consulta de verdade. Retorna null em sucesso ou msg de erro.
+  /// Horários livres do médico numa data.
+  Future<List<AvailableSlot>> loadSlots(String doctorId, DateTime date) =>
+      _repo.getAvailableSlots(doctorId, date);
+
+  /// Agenda uma consulta de verdade no slot escolhido. Retorna null em sucesso
+  /// ou a mensagem de erro. Envia exatamente o start/end do slot.
   Future<String?> schedule({
     required String patientId,
     required String doctorId,
     required AppointmentType type,
-    required DateTime start,
+    required AvailableSlot slot,
   }) async {
     try {
       await _repo.createAppointment(
         patientId: patientId,
         doctorId: doctorId,
         type: type,
-        start: start,
-        end: start.add(const Duration(minutes: 30)),
+        startIso: slot.startIso,
+        endIso: slot.endIso,
       );
       await load();
       return null;

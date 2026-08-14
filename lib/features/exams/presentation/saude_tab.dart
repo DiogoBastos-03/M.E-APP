@@ -6,6 +6,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../access/presentation/access_controller.dart';
 import '../../access/presentation/widgets/access_common.dart';
+import '../../documents/data/medical_document_models.dart';
+import '../../documents/presentation/document_detail_screen.dart';
+import '../../documents/presentation/document_status_chip.dart';
+import '../../documents/presentation/medical_documents_controller.dart';
+import '../../documents/presentation/type_filter_dropdown.dart';
 import '../../health/data/history_models.dart';
 import '../../health/presentation/consulta_detail_screen.dart';
 import '../../health/presentation/health_format.dart';
@@ -51,7 +56,7 @@ class _SaudeTabState extends State<SaudeTab> {
                 const SizedBox(height: 16),
                 _Segmented(
                   index: _segment,
-                  labels: const ['Exames', 'Consultas', 'Histórico'],
+                  labels: const ['Documentos', 'Consultas', 'Histórico'],
                   onChanged: (i) => setState(() => _segment = i),
                 ),
               ],
@@ -62,7 +67,7 @@ class _SaudeTabState extends State<SaudeTab> {
             child: IndexedStack(
               index: _segment,
               children: const [
-                _ExamsView(),
+                _UnifiedDocsView(),
                 _ConsultasView(),
                 _HistoricoView(),
               ],
@@ -75,64 +80,135 @@ class _SaudeTabState extends State<SaudeTab> {
 }
 
 // --------------------------------------------------------------------------- //
-// Exames
+// Documentos + Exames (lista unificada)
 // --------------------------------------------------------------------------- //
-class _ExamsView extends StatelessWidget {
-  const _ExamsView();
+const _filterOptions = <TypeFilterOption>[
+  TypeFilterOption('all', 'Todos'),
+  TypeFilterOption('RECEITA_SIMPLES', 'Receita simples'),
+  TypeFilterOption('RECEITA_CONTROLE_ESPECIAL', 'Receita de controle especial'),
+  TypeFilterOption('ATESTADO', 'Atestado'),
+  TypeFilterOption('PEDIDO_EXAME', 'Pedido de exame'),
+  TypeFilterOption('SOLICITACAO_PROCEDIMENTO', 'Solicitação de procedimento'),
+  TypeFilterOption('exam', 'Resultado de exame'),
+];
+
+/// Item da lista unificada: um documento médico OU um resultado de exame.
+class _SaudeItem {
+  const _SaudeItem._(this.date, this.doc, this.exam);
+  final DateTime date;
+  final MedicalDocument? doc;
+  final ExamResult? exam;
+  factory _SaudeItem.doc(MedicalDocument d) => _SaudeItem._(d.issuedAt, d, null);
+  factory _SaudeItem.exam(ExamResult e) => _SaudeItem._(e.resultDate ?? e.createdAt, null, e);
+  bool get isDoc => doc != null;
+}
+
+class _UnifiedDocsView extends StatefulWidget {
+  const _UnifiedDocsView();
+  @override
+  State<_UnifiedDocsView> createState() => _UnifiedDocsViewState();
+}
+
+class _UnifiedDocsViewState extends State<_UnifiedDocsView> {
+  String _filter = 'all';
 
   @override
   Widget build(BuildContext context) {
-    final c = context.watch<ExamsController>();
+    final docsC = context.watch<MedicalDocumentsController>();
+    final examsC = context.watch<ExamsController>();
+
+    final items = <_SaudeItem>[
+      for (final d in docsC.documents) _SaudeItem.doc(d),
+      for (final e in examsC.exams) _SaudeItem.exam(e),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+
+    final filtered = items.where((it) {
+      if (_filter == 'all') return true;
+      if (_filter == 'exam') return !it.isDoc;
+      return it.isDoc && it.doc!.documentType == _filter;
+    }).toList();
+
+    final loading = docsC.state == Loading.loading || examsC.state == Loading.loading;
+    final bothError = docsC.state == Loading.error && examsC.state == Loading.error;
+
     Widget body;
-    if (c.state == Loading.loading) {
+    if (loading && items.isEmpty) {
       body = const LoadingState();
-    } else if (c.state == Loading.error) {
-      body = ErrorState(message: c.error ?? 'Erro', onRetry: c.load);
-    } else if (c.exams.isEmpty) {
-      body = const EmptyState(
-        title: 'Nenhum exame ainda',
-        message: 'Quando um médico publicar um resultado de exame, ele aparece aqui.',
-        icon: Icons.science_outlined,
+    } else if (bothError) {
+      body = ErrorState(
+        message: docsC.error ?? examsC.error ?? 'Erro',
+        onRetry: () {
+          docsC.load();
+          examsC.load();
+        },
+      );
+    } else if (filtered.isEmpty) {
+      body = EmptyState(
+        title: items.isEmpty ? 'Você ainda não tem documentos ou exames' : 'Nada neste filtro',
+        message: items.isEmpty
+            ? 'Receitas, atestados, pedidos e resultados de exame aparecem aqui.'
+            : 'Nenhum item deste tipo. Tente outro filtro acima.',
+        icon: Icons.folder_open_outlined,
       );
     } else {
       body = Column(
         children: [
-          for (final e in c.exams)
+          for (final it in filtered)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _ExamCard(exam: e),
+              child: it.isDoc
+                  ? _DocumentCard(doc: it.doc!, controller: docsC)
+                  : _ExamRowCard(exam: it.exam!),
             ),
         ],
       );
     }
-    return RefreshIndicator(
-      color: AppColors.brand,
-      onRefresh: c.load,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        children: [body],
-      ),
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+          child: TypeFilterDropdown(
+            options: _filterOptions,
+            selectedKey: _filter,
+            onChanged: (k) => setState(() => _filter = k),
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.brand,
+            onRefresh: () async {
+              await Future.wait([docsC.load(), examsC.load()]);
+            },
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              children: [body],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _ExamCard extends StatelessWidget {
-  const _ExamCard({required this.exam});
+/// Card de resultado de exame na lista unificada: título "Resultado de exame",
+/// subtítulo "tipo do exame · data".
+class _ExamRowCard extends StatelessWidget {
+  const _ExamRowCard({required this.exam});
   final ExamResult exam;
 
   @override
   Widget build(BuildContext context) {
-    final access = context.read<AccessController>();
-    final publisher = access.doctorNameByUserId(exam.uploadedByUserId) ?? 'Profissional autorizado';
-
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ExamDetailScreen(
             exam: exam,
             controller: context.read<ExamsController>(),
-            publisher: publisher,
+            publisher: context.read<AccessController>().doctorNameByUserId(exam.uploadedByUserId) ??
+                'Profissional autorizado',
           ),
         ),
       ),
@@ -160,7 +236,7 @@ class _ExamCard extends StatelessWidget {
                   Row(
                     children: [
                       Flexible(
-                        child: Text(exam.examType,
+                        child: Text('Resultado de exame',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.poppins(
@@ -170,7 +246,8 @@ class _ExamCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: AppColors.brandTint, borderRadius: BorderRadius.circular(999)),
+                          decoration: BoxDecoration(
+                              color: AppColors.brandTint, borderRadius: BorderRadius.circular(999)),
                           child: Text('Novo',
                               style: GoogleFonts.poppins(
                                   fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.brandDark)),
@@ -179,7 +256,7 @@ class _ExamCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 3),
-                  Text('$publisher  ·  ${_fmtShort(exam.resultDate ?? exam.createdAt)}',
+                  Text('${exam.examType}  ·  ${_fmtShort(exam.resultDate ?? exam.createdAt)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary)),
@@ -188,6 +265,77 @@ class _ExamCard extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             if (exam.hasFile)
+              const Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textSecondary),
+            const Icon(Icons.chevron_right, size: 20, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DocumentCard extends StatelessWidget {
+  const _DocumentCard({required this.doc, required this.controller});
+  final MedicalDocument doc;
+  final MedicalDocumentsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final doctorName = controller.doctorNameFor(doc);
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DocumentDetailScreen(
+            document: doc,
+            controller: controller,
+            doctorName: doctorName,
+          ),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
+          border: Border.all(color: AppColors.border),
+          boxShadow: AppTheme.softShadow,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(color: AppColors.brandTint, borderRadius: BorderRadius.circular(14)),
+              child: Icon(doc.typeIcon, color: AppColors.brandDark, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(doc.typeLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                                fontSize: 14.5, fontWeight: FontWeight.w600, color: AppColors.text)),
+                      ),
+                      const SizedBox(width: 8),
+                      DocumentStatusChip(doc: doc),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text('$doctorName  ·  ${_fmtShort(doc.issuedAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (doc.hasPdf)
               const Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textSecondary),
             const Icon(Icons.chevron_right, size: 20, color: AppColors.textSecondary),
           ],

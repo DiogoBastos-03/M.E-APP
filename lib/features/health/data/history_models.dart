@@ -1,5 +1,37 @@
 import '../../home/data/home_models.dart';
 
+/// Horário livre do médico (AvailableSlotResponse).
+/// Guarda as strings ISO cruas para reenviar EXATAMENTE no POST /appointments,
+/// e as versões locais só para exibição.
+class AvailableSlot {
+  const AvailableSlot({
+    required this.startIso,
+    required this.endIso,
+    required this.start,
+    required this.end,
+  });
+
+  final String startIso;
+  final String endIso;
+  final DateTime start; // local, só para mostrar
+  final DateTime end;
+
+  /// "HH:mm" no fuso do aparelho.
+  String get label =>
+      '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+
+  factory AvailableSlot.fromJson(Map<String, dynamic> j) {
+    final s = j['startDatetime'] as String;
+    final e = j['endDatetime'] as String;
+    return AvailableSlot(
+      startIso: s,
+      endIso: e,
+      start: DateTime.parse(s).toLocal(),
+      end: DateTime.parse(e).toLocal(),
+    );
+  }
+}
+
 /// Prontuário (MedicalRecordResponse).
 class MedicalRecord {
   const MedicalRecord({

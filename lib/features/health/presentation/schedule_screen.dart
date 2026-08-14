@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../access/data/access_models.dart';
 import '../../home/data/home_models.dart';
+import '../data/history_models.dart';
 import 'history_controller.dart';
 
 /// Formulário mínimo de agendamento — cria a consulta DE VERDADE (POST /appointments).
@@ -23,8 +24,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   DoctorLite? _doctor;
   AppointmentType _type = AppointmentType.inPerson;
   DateTime? _date;
-  TimeOfDay? _time;
   bool _submitting = false;
+
+  // Horários livres do médico na data escolhida.
+  List<AvailableSlot>? _slots;
+  bool _slotsLoading = false;
+  String? _slotsError;
+  AvailableSlot? _selectedSlot;
 
   @override
   void initState() {
@@ -46,24 +52,44 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   bool get _teleUnavailable =>
       _type == AppointmentType.telemedicine && _doctor != null && !_doctor!.acceptsTelemedicine;
 
-  DateTime? get _start {
-    if (_date == null || _time == null) return null;
-    return DateTime(_date!.year, _date!.month, _date!.day, _time!.hour, _time!.minute);
-  }
+  bool get _canSubmit =>
+      _doctor != null && _selectedSlot != null && !_teleUnavailable && !_submitting;
 
-  bool get _canSubmit {
-    final s = _start;
-    return _doctor != null && s != null && s.isAfter(DateTime.now()) && !_teleUnavailable && !_submitting;
+  /// (Re)carrega os slots livres do médico na data escolhida.
+  Future<void> _loadSlots() async {
+    setState(() {
+      _selectedSlot = null;
+      _slots = null;
+      _slotsError = null;
+    });
+    final doctor = _doctor;
+    final date = _date;
+    if (doctor == null || date == null) return;
+    setState(() => _slotsLoading = true);
+    try {
+      final slots = await widget.controller.loadSlots(doctor.id, date);
+      if (!mounted) return;
+      setState(() {
+        _slots = slots;
+        _slotsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _slotsError = 'Não foi possível carregar os horários disponíveis.';
+        _slotsLoading = false;
+      });
+    }
   }
 
   Future<void> _submit() async {
-    final start = _start!;
+    final slot = _selectedSlot!;
     setState(() => _submitting = true);
     final err = await widget.controller.schedule(
       patientId: widget.patientId,
       doctorId: _doctor!.id,
       type: _type,
-      start: start,
+      slot: slot,
     );
     if (!mounted) return;
     setState(() => _submitting = false);
@@ -129,23 +155,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.stateDanger)),
                   ],
                   const SizedBox(height: 20),
-                  _label('Data e horário'),
+                  _label('Data'),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(child: _pickerField(
-                        icon: Icons.calendar_today_outlined,
-                        text: _date == null ? 'Data' : '${_date!.day}/${_date!.month}/${_date!.year}',
-                        onTap: _pickDate,
-                      )),
-                      const SizedBox(width: 10),
-                      Expanded(child: _pickerField(
-                        icon: Icons.schedule,
-                        text: _time == null ? 'Horário' : _time!.format(context),
-                        onTap: _pickTime,
-                      )),
-                    ],
+                  _pickerField(
+                    icon: Icons.calendar_today_outlined,
+                    text: _date == null
+                        ? 'Escolha a data'
+                        : '${_date!.day}/${_date!.month}/${_date!.year}',
+                    onTap: _pickDate,
                   ),
+                  const SizedBox(height: 20),
+                  _label('Horários disponíveis'),
+                  const SizedBox(height: 8),
+                  _slotsSection(),
                 ],
               ),
             ),
@@ -201,7 +223,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     style: GoogleFonts.poppins(fontSize: 14, color: AppColors.text)),
               ),
           ],
-          onChanged: (v) => setState(() => _doctor = v),
+          onChanged: (v) {
+            setState(() => _doctor = v);
+            _loadSlots();
+          },
         ),
       ),
     );
@@ -237,8 +262,67 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  Widget _slotsSection() {
+    if (_doctor == null || _date == null) {
+      return _hintBox('Escolha o médico e a data para ver os horários livres.');
+    }
+    if (_slotsLoading) {
+      return const SizedBox(
+        height: 40,
+        child: Center(child: CircularProgressIndicator(color: AppColors.brand)),
+      );
+    }
+    if (_slotsError != null) {
+      return Text(_slotsError!,
+          style: GoogleFonts.poppins(fontSize: 12.5, color: AppColors.stateDanger));
+    }
+    final slots = _slots ?? const <AvailableSlot>[];
+    if (slots.isEmpty) {
+      return _hintBox('Sem horários disponíveis neste dia.');
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [for (final s in slots) _slotChip(s)],
+    );
+  }
+
+  Widget _slotChip(AvailableSlot s) {
+    final selected = _selectedSlot != null && _selectedSlot!.startIso == s.startIso;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedSlot = s),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.brand : AppColors.card,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? AppColors.brand : AppColors.border),
+        ),
+        child: Text(s.label,
+            style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : AppColors.text)),
+      ),
+    );
+  }
+
+  Widget _hintBox(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: AppColors.section,
+        borderRadius: BorderRadius.circular(AppTheme.radiusInner),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(text,
+          style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textSecondary)),
+    );
+  }
+
   Widget _pickerField({required IconData icon, required String text, required VoidCallback onTap}) {
-    final filled = text != 'Data' && text != 'Horário';
+    final filled = !text.startsWith('Escolha');
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -268,11 +352,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       firstDate: now,
       lastDate: now.add(const Duration(days: 180)),
     );
-    if (d != null) setState(() => _date = d);
-  }
-
-  Future<void> _pickTime() async {
-    final t = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));
-    if (t != null) setState(() => _time = t);
+    if (d != null) {
+      setState(() => _date = d);
+      _loadSlots();
+    }
   }
 }
