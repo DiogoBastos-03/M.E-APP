@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Assinatura Android - nunca versionar (o CI gera esses arquivos a partir de secrets)
+android/key.properties
+*.jks
+*.keystore
