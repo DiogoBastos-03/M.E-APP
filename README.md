@@ -41,7 +41,10 @@ git add android && git commit -m "chore: adiciona plataforma Android"
 
 O workflow detecta a pasta versionada e passa a usá-la como está.
 
-Em ambos os casos, [`.github/scripts/prepare_android.py`](.github/scripts/prepare_android.py) garante a permissão `INTERNET` no manifest principal — o template do Flutter só a declara em debug/profile, então sem esse ajuste o APK de release instala mas falha em toda chamada à API.
+Em ambos os casos, [`.github/scripts/prepare_android.py`](.github/scripts/prepare_android.py) aplica dois ajustes sobre a pasta:
+
+- **Permissão `INTERNET`** no manifest principal — o template do Flutter só a declara em debug/profile, então sem isso o APK de release instala mas falha em toda chamada à API.
+- **`compileSdk`** elevado para o valor de `ANDROID_COMPILE_SDK` (hoje `37`), definido no topo do workflow. O template compila contra o SDK 36, mas `flutter_secure_storage` exige 37 e o Gradle aborta em `:app:checkReleaseAarMetadata`. Quando algum plugin passar a pedir mais, suba esse número — `minSdk` e `targetSdk` continuam vindo do Flutter.
 
 ### Assinatura
 

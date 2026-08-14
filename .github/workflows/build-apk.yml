@@ -32,6 +32,9 @@ env:
   # com.medev.meApp) -> applicationId com.medev.me_app.
   ANDROID_ORG: 'com.medev'
   JAVA_VERSION: '17'
+  # O template do Flutter compila contra o SDK 36, mas flutter_secure_storage 11
+  # exige 37. Suba este numero quando um plugin passar a pedir mais.
+  ANDROID_COMPILE_SDK: '37'
 
 jobs:
   analyze:
@@ -115,7 +118,7 @@ jobs:
             flutter create --platforms=android --org "${ANDROID_ORG}" --project-name me_app .
           fi
 
-      - name: Preparar android/ (permissao INTERNET e assinatura)
+      - name: Preparar android/ (permissao INTERNET, compileSdk e assinatura)
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -136,7 +139,8 @@ jobs:
           else
             echo "::notice::Sem ANDROID_KEYSTORE_BASE64 - o release sera assinado com a chave debug (instalavel, mas nao publicavel na Play Store)."
           fi
-          python3 .github/scripts/prepare_android.py ${SIGNING_FLAG}
+          python3 .github/scripts/prepare_android.py \
+            --compile-sdk "${ANDROID_COMPILE_SDK}" ${SIGNING_FLAG}
 
       - name: Build do APK
         run: |

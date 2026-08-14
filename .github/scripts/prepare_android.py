@@ -8,12 +8,14 @@ O script é idempotente e funciona tanto sobre um android/ recém-criado por
    Flutter declara essa permissão apenas nos manifests de debug/profile, então
    um APK de release sem esse ajuste instala normalmente mas falha em toda
    chamada à API.
-2. Com --signing, configura a assinatura de release lendo android/key.properties
+2. Eleva o compileSdk quando algum plugin exige mais que o padrão do template
+   (flutter_secure_storage 11 exige 37; o template compila contra 36).
+3. Com --signing, configura a assinatura de release lendo android/key.properties
    (escrito pelo workflow a partir dos secrets). Sem a flag, o release continua
    assinado com a chave debug, que é o padrão do template.
 
 Uso:
-    python3 .github/scripts/prepare_android.py [--signing]
+    python3 .github/scripts/prepare_android.py [--compile-sdk 37] [--signing]
 """
 
 from __future__ import annotations
@@ -27,6 +29,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
 GRADLE_KTS = ROOT / "android" / "app" / "build.gradle.kts"
 GRADLE_GROOVY = ROOT / "android" / "app" / "build.gradle"
+GRADLE_PROPERTIES = ROOT / "android" / "gradle.properties"
+
+# compileSdk minimo exigido pelos plugins do projeto. O template do Flutter usa
+# flutter.compileSdkVersion (36 hoje), mas flutter_secure_storage 11 exige 37 e
+# o build falha em :app:checkReleaseAarMetadata sem esse ajuste.
+DEFAULT_COMPILE_SDK = 37
 
 INTERNET_PERMISSION = '    <uses-permission android:name="android.permission.INTERNET"/>'
 
@@ -102,6 +110,50 @@ def ensure_internet_permission() -> None:
     log("permissão INTERNET adicionada ao manifest principal.")
 
 
+def ensure_compile_sdk(min_sdk: int) -> None:
+    """Eleva o compileSdk do modulo app para pelo menos `min_sdk`.
+
+    O template do Flutter usa `compileSdk = flutter.compileSdkVersion`, que hoje
+    resolve para 36. flutter_secure_storage 11 exige 37 e o Gradle aborta em
+    :app:checkReleaseAarMetadata. targetSdk e minSdk continuam vindo do Flutter:
+    compileSdk so define contra quais APIs o codigo compila.
+    """
+    if GRADLE_KTS.exists():
+        gradle_file = GRADLE_KTS
+        pattern = r"compileSdk\s*=\s*(?P<val>flutter\.compileSdkVersion|\d+)"
+        replacement = f"compileSdk = {min_sdk}"
+    elif GRADLE_GROOVY.exists():
+        gradle_file = GRADLE_GROOVY
+        pattern = r"compileSdk(?:Version)?\s+(?P<val>flutter\.compileSdkVersion|\d+)"
+        replacement = f"compileSdk {min_sdk}"
+    else:
+        fail("nenhum build.gradle(.kts) encontrado em android/app/.")
+
+    text = gradle_file.read_text(encoding="utf-8")
+    match = re.search(pattern, text)
+    if match is None:
+        fail(f"declaracao de compileSdk nao encontrada em {gradle_file.name}.")
+
+    current = match.group("val")
+    if current.isdigit() and int(current) >= min_sdk:
+        log(f"compileSdk ja e {current} (>= {min_sdk}) — mantido.")
+        return
+
+    gradle_file.write_text(text[: match.start()] + replacement + text[match.end() :], encoding="utf-8")
+    log(f"compileSdk elevado de {current} para {min_sdk} em {gradle_file.name}.")
+
+    # O AGP avisa quando o compileSdk e mais novo que o maximo que ele conhece.
+    # E so um aviso, mas polui o log do build; a flag abaixo o silencia.
+    suppress_key = "android.suppressUnsupportedCompileSdk"
+    properties = GRADLE_PROPERTIES.read_text(encoding="utf-8") if GRADLE_PROPERTIES.exists() else ""
+    if suppress_key not in properties:
+        if properties and not properties.endswith("\n"):
+            properties += "\n"
+        properties += f"{suppress_key}={min_sdk}\n"
+        GRADLE_PROPERTIES.write_text(properties, encoding="utf-8")
+        log(f"{suppress_key}={min_sdk} adicionado a gradle.properties.")
+
+
 def configure_signing() -> None:
     if GRADLE_KTS.exists():
         gradle_file, loader, signing = GRADLE_KTS, LOADER_KTS, SIGNING_KTS
@@ -150,6 +202,12 @@ def configure_signing() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--compile-sdk",
+        type=int,
+        default=DEFAULT_COMPILE_SDK,
+        help=f"compileSdk minimo do modulo app (padrao: {DEFAULT_COMPILE_SDK})",
+    )
+    parser.add_argument(
         "--signing",
         action="store_true",
         help="configura a assinatura de release a partir de android/key.properties",
@@ -160,6 +218,7 @@ def main() -> None:
         fail("pasta android/ não existe — rode `flutter create --platforms=android .` antes.")
 
     ensure_internet_permission()
+    ensure_compile_sdk(args.compile_sdk)
 
     if args.signing:
         configure_signing()
