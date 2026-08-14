@@ -592,30 +592,12 @@ class _HistoricoView extends StatelessWidget {
       body = ErrorState(message: c.error ?? 'Erro', onRetry: c.load);
     } else {
       final h = c.history;
-      final mr = h?.medicalRecord;
       final summaries = (h?.summaries ?? []).where((s) => s.hasContent).toList();
       final requests = h?.examRequests ?? [];
 
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Prontuário
-          const _SectionLabel('PRONTUÁRIO'),
-          if (mr == null)
-            const _EmptyNote('Seu prontuário ainda não foi preenchido por um profissional.')
-          else
-            AccessCard(
-              child: Column(
-                children: [
-                  _InfoRow(icon: Icons.water_drop_outlined, label: 'Tipo sanguíneo', value: mr.bloodTypeLabel ?? '—'),
-                  const Divider(height: 18, color: AppColors.section),
-                  _InfoRow(icon: Icons.warning_amber_rounded, label: 'Alergias', value: mr.allergies ?? 'Nenhuma registrada'),
-                  const Divider(height: 18, color: AppColors.section),
-                  _InfoRow(icon: Icons.monitor_heart_outlined, label: 'Condições crônicas', value: mr.chronicConditions ?? 'Nenhuma registrada'),
-                ],
-              ),
-            ),
-          const SizedBox(height: 22),
           // Resumos de consulta
           const _SectionLabel('RESUMOS DE CONSULTA'),
           if (summaries.isEmpty)
@@ -758,34 +740,6 @@ class _SectionLabel extends StatelessWidget {
             style: GoogleFonts.poppins(
                 fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary)),
       );
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.icon, required this.label, required this.value});
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: AppColors.textSecondary),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.textSecondary)),
-              const SizedBox(height: 2),
-              Text(value, style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.w500, color: AppColors.text)),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _EmptyNote extends StatelessWidget {

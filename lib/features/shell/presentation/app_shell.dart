@@ -16,9 +16,11 @@ import '../../health/data/history_repository.dart';
 import '../../health/presentation/history_controller.dart';
 import '../../home/data/home_repository.dart';
 import '../../home/presentation/home_controller.dart';
+import '../../profile/data/profile_repository.dart';
+import '../../profile/presentation/profile_controller.dart';
+import '../../profile/presentation/profile_screen.dart';
 import 'home_tab.dart';
 import 'shell_controller.dart';
-import 'tab_placeholder.dart';
 
 /// Casca do app após o login: 4 abas com barra inferior.
 /// Início e Acessos implementadas; Saúde/Perfil ainda placeholders.
@@ -55,6 +57,10 @@ class AppShell extends StatelessWidget {
           create: (ctx) =>
               HistoryController(HistoryRepository(ctx.read<AuthController>().api))..load(),
         ),
+        ChangeNotifierProvider(
+          create: (ctx) =>
+              ProfileController(ProfileRepository(ctx.read<AuthController>().api))..load(),
+        ),
       ],
       child: const _ShellScaffold(),
     );
@@ -68,11 +74,7 @@ class _ShellScaffold extends StatelessWidget {
     HomeTab(),
     AccessTab(),
     SaudeTab(),
-    TabPlaceholder(
-      title: 'Perfil',
-      icon: Icons.person_outline,
-      subtitle: 'Seus dados, segurança (2FA) e exportação LGPD.',
-    ),
+    ProfileScreen(),
   ];
 
   static const _items = <_NavItem>[
