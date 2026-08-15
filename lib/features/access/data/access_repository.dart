@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/network/api_client.dart';
+import '../../doctors/data/doctor_models.dart';
 import 'access_models.dart';
 
 /// Acesso às rotas de consentimento/auditoria do backend.
@@ -29,9 +30,21 @@ class AccessRepository {
     return _list(r).map(RecordAccessLog.fromJson).toList();
   }
 
-  Future<List<DoctorLite>> getDoctors() async {
-    final r = await _dio.get('$_p/doctors');
-    return _list(r).map(DoctorLite.fromJson).toList();
+  static const int _directoryPageSize = 50;
+  static const int _directoryMaxPages = 5;
+
+  Future<List<DoctorListItem>> getDoctors() async {
+    final all = <DoctorListItem>[];
+    for (var page = 0; page < _directoryMaxPages; page++) {
+      final r = await _dio.get('$_p/doctors', queryParameters: {
+        'page': page,
+        'size': _directoryPageSize,
+      });
+      final result = DoctorPage.fromJson(r.data as Map<String, dynamic>);
+      all.addAll(result.content);
+      if (!result.hasNext) break;
+    }
+    return all;
   }
 
   Future<List<ClinicLite>> getClinics() async {

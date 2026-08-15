@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/network/api_client.dart';
-import '../../access/data/access_models.dart';
 import '../../home/data/home_models.dart';
 import 'history_models.dart';
 
@@ -17,12 +16,6 @@ class HistoryRepository {
   Future<ClinicalHistory> getHistory() async {
     final r = await _dio.get('$_p/medical-records/me/history');
     return ClinicalHistory.fromJson(r.data as Map<String, dynamic>);
-  }
-
-  /// Lista de médicos (para o formulário de agendamento).
-  Future<List<DoctorLite>> getDoctors() async {
-    final r = await _dio.get('$_p/doctors');
-    return (r.data as List).cast<Map<String, dynamic>>().map(DoctorLite.fromJson).toList();
   }
 
   /// Horários livres do médico numa data (janelas − bloqueios − consultas).

@@ -15,6 +15,7 @@ import '../../health/data/history_models.dart';
 import '../../health/presentation/consulta_detail_screen.dart';
 import '../../health/presentation/health_format.dart';
 import '../../health/presentation/history_controller.dart';
+import '../../health/presentation/rating_sheet.dart';
 import '../../health/presentation/schedule_screen.dart';
 import '../../home/data/home_models.dart';
 import '../../home/presentation/home_controller.dart';
@@ -427,7 +428,8 @@ class _ConsultasView extends StatelessWidget {
             for (final a in upcoming)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _ConsultaCard(appt: a, access: access, summary: c.summaryFor(a.id)),
+                child: _ConsultaCard(
+                    appt: a, access: access, summary: c.summaryFor(a.id), history: c),
               ),
           ],
           if (past.isNotEmpty) ...[
@@ -436,7 +438,8 @@ class _ConsultasView extends StatelessWidget {
             for (final a in past)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _ConsultaCard(appt: a, access: access, summary: c.summaryFor(a.id)),
+                child: _ConsultaCard(
+                    appt: a, access: access, summary: c.summaryFor(a.id), history: c),
               ),
           ],
         ],
@@ -472,10 +475,16 @@ class _ConsultasView extends StatelessWidget {
 }
 
 class _ConsultaCard extends StatelessWidget {
-  const _ConsultaCard({required this.appt, required this.access, required this.summary});
+  const _ConsultaCard({
+    required this.appt,
+    required this.access,
+    required this.summary,
+    required this.history,
+  });
   final Appointment appt;
   final AccessController access;
   final ConsultationSummary? summary;
+  final HistoryController history;
 
   ({String label, Color bg, Color fg, Color dot}) _statusChip() {
     if (appt.isPaymentPending) {
@@ -546,9 +555,63 @@ class _ConsultaCard extends StatelessWidget {
                   ]),
               ],
             ),
+            if (appt.status == ApptStatus.completed) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 10),
+              _reviewRow(context, doctor),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _reviewRow(BuildContext context, String doctor) {
+    final review = history.reviewFor(appt.id);
+
+    if (review == null) {
+      return Row(
+        children: [
+          Text('Como foi sua consulta?',
+              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => showRatingSheet(
+              context,
+              controller: history,
+              appointmentId: appt.id,
+              doctorName: doctor,
+            ),
+            child: Text('Avaliar',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.brand)),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        for (var i = 1; i <= 5; i++)
+          Icon(
+            i <= review.rating ? Icons.star_rounded : Icons.star_border_rounded,
+            size: 16,
+            color: i <= review.rating ? AppColors.statePending : AppColors.textSecondary,
+          ),
+        const Spacer(),
+        GestureDetector(
+          onTap: () => showRatingSheet(
+            context,
+            controller: history,
+            appointmentId: appt.id,
+            doctorName: doctor,
+          ),
+          child: Text('Editar avaliação',
+              style: GoogleFonts.poppins(
+                  fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.brand)),
+        ),
+      ],
     );
   }
 }

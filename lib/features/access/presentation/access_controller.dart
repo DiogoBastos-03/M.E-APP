@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../doctors/data/doctor_models.dart';
 import '../data/access_models.dart';
 import '../data/access_repository.dart';
 
@@ -29,8 +30,8 @@ class AccessController extends ChangeNotifier {
   AccessAction? logFilter; // null = todas
 
   // Diretório
-  final Map<String, DoctorLite> _docById = {};
-  final Map<String, DoctorLite> _docByUserId = {};
+  final Map<String, DoctorListItem> _docById = {};
+  final Map<String, DoctorListItem> _docByUserId = {};
   final Map<String, ClinicLite> _clinicById = {};
   bool _directoryLoaded = false;
 
@@ -147,14 +148,14 @@ class AccessController extends ChangeNotifier {
 
   /// Especialidade do médico a partir do userId.
   String? doctorSpecialtyByUserId(String? userId) =>
-      userId == null ? null : _docByUserId[userId]?.specialty;
+      userId == null ? null : _docByUserId[userId]?.specialtyLabel;
 
   Requester requesterFor(AccessGrant g) {
     if (g.doctorId != null && _docById.containsKey(g.doctorId)) {
       final d = _docById[g.doctorId]!;
       return Requester(
         name: d.fullName,
-        subtitle: d.specialty ?? 'Médico(a)',
+        subtitle: d.specialtyLabel,
         crm: d.crm,
         initials: _initials(d.fullName),
       );

@@ -3,7 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../access/data/access_models.dart';
+import '../../doctors/data/doctor_models.dart';
+import '../../doctors/presentation/doctor_picker_screen.dart';
 import '../../home/data/home_models.dart';
 import '../data/history_models.dart';
 import 'history_controller.dart';
@@ -19,9 +20,7 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  List<DoctorLite>? _doctors;
-  String? _loadError;
-  DoctorLite? _doctor;
+  DoctorListItem? _doctor;
   AppointmentType _type = AppointmentType.inPerson;
   DateTime? _date;
   bool _submitting = false;
@@ -32,21 +31,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _slotsError;
   AvailableSlot? _selectedSlot;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadDoctors();
-  }
-
-  Future<void> _loadDoctors() async {
-    try {
-      final d = await widget.controller.loadDoctors();
-      if (!mounted) return;
-      setState(() => _doctors = d);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadError = 'Não foi possível carregar a lista de médicos.');
-    }
+  Future<void> _pickDoctor() async {
+    final picked = await Navigator.of(context).push<DoctorListItem>(
+      MaterialPageRoute(
+        builder: (_) => DoctorPickerScreen(selectedDoctorId: _doctor?.id),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _doctor = picked);
+    _loadSlots();
   }
 
   bool get _teleUnavailable =>
@@ -196,37 +189,47 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text));
 
   Widget _doctorField() {
-    if (_loadError != null) {
-      return Text(_loadError!, style: GoogleFonts.poppins(fontSize: 12.5, color: AppColors.stateDanger));
+    final doctor = _doctor;
+    if (doctor == null) {
+      return _pickerField(
+        icon: Icons.person_outline,
+        text: 'Escolha o médico',
+        onTap: _pickDoctor,
+      );
     }
-    if (_doctors == null) {
-      return const SizedBox(height: 40, child: Center(child: CircularProgressIndicator(color: AppColors.brand)));
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: AppColors.section,
-        borderRadius: BorderRadius.circular(AppTheme.radiusInner),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<DoctorLite>(
-          isExpanded: true,
-          value: _doctor,
-          hint: Text('Selecione um médico', style: GoogleFonts.poppins(fontSize: 14, color: AppColors.textSecondary)),
-          items: [
-            for (final d in _doctors!)
-              DropdownMenuItem(
-                value: d,
-                child: Text('${d.fullName}${d.specialty != null ? ' · ${d.specialty}' : ''}',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(fontSize: 14, color: AppColors.text)),
+    return GestureDetector(
+      onTap: _pickDoctor,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.section,
+          borderRadius: BorderRadius.circular(AppTheme.radiusInner),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(doctor.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                          fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+                  const SizedBox(height: 2),
+                  Text(doctor.specialtyLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary)),
+                ],
               ),
+            ),
+            const SizedBox(width: 10),
+            Text('Trocar',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.brand)),
           ],
-          onChanged: (v) {
-            setState(() => _doctor = v);
-            _loadSlots();
-          },
         ),
       ),
     );

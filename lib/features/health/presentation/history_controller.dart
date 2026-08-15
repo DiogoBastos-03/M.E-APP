@@ -1,26 +1,33 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../access/data/access_models.dart';
 import '../../access/presentation/access_controller.dart' show Loading;
+import '../../doctors/data/doctor_models.dart';
+import '../../doctors/data/doctors_repository.dart';
 import '../../home/data/home_models.dart';
 import '../data/history_models.dart';
 import '../data/history_repository.dart';
 
 /// Estado das seções Consultas + Histórico da aba Saúde.
 class HistoryController extends ChangeNotifier {
-  HistoryController(this._repo);
+  HistoryController(this._repo, this._doctors);
   final HistoryRepository _repo;
+  final DoctorsRepository _doctors;
 
   Loading state = Loading.idle;
   String? error;
   ClinicalHistory? history;
+
+  final Map<String, DoctorReview> _reviewsByAppointment = {};
+
+  DoctorReview? reviewFor(String appointmentId) => _reviewsByAppointment[appointmentId];
 
   Future<void> load() async {
     state = Loading.loading;
     notifyListeners();
     try {
       history = await _repo.getHistory();
+      await _loadReviews();
       state = Loading.ready;
     } on DioException catch (e) {
       error = _msg(e);
@@ -48,8 +55,6 @@ class HistoryController extends ChangeNotifier {
 
   ConsultationSummary? summaryFor(String appointmentId) => history?.summaryFor(appointmentId);
 
-  Future<List<DoctorLite>> loadDoctors() => _repo.getDoctors();
-
   /// Horários livres do médico numa data.
   Future<List<AvailableSlot>> loadSlots(String doctorId, DateTime date) =>
       _repo.getAvailableSlots(doctorId, date);
@@ -71,6 +76,44 @@ class HistoryController extends ChangeNotifier {
         endIso: slot.endIso,
       );
       await load();
+      return null;
+    } on DioException catch (e) {
+      return _msg(e);
+    }
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final reviews = await _doctors.getMyReviews();
+      _reviewsByAppointment
+        ..clear()
+        ..addEntries(reviews.map((r) => MapEntry(r.appointmentId, r)));
+    } catch (_) {
+      return;
+    }
+  }
+
+  /// Avalia uma consulta concluída. Retorna null em sucesso ou a mensagem de erro.
+  Future<String?> review({
+    required String appointmentId,
+    required int rating,
+    String? comment,
+  }) async {
+    try {
+      final existing = _reviewsByAppointment[appointmentId];
+      final saved = existing == null
+          ? await _doctors.createReview(
+              appointmentId: appointmentId,
+              rating: rating,
+              comment: comment,
+            )
+          : await _doctors.updateReview(
+              reviewId: existing.id,
+              rating: rating,
+              comment: comment,
+            );
+      _reviewsByAppointment[appointmentId] = saved;
+      notifyListeners();
       return null;
     } on DioException catch (e) {
       return _msg(e);

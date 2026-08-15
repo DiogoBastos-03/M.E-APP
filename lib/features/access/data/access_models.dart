@@ -156,30 +156,7 @@ class RecordAccessLog {
       );
 }
 
-/// Dados leves de médico (DoctorResponse) e clínica (ClinicResponse) para
-/// resolver nomes/especialidades a partir de doctorId / clinicId / userId.
-class DoctorLite {
-  const DoctorLite(this.id, this.userId, this.fullName, this.specialty, this.crm,
-      {this.consultationPriceCents});
-  final String id;
-  final String? userId;
-  final String fullName;
-  final String? specialty;
-  final String? crm;
-  final int? consultationPriceCents;
-
-  bool get acceptsTelemedicine => (consultationPriceCents ?? 0) > 0;
-
-  factory DoctorLite.fromJson(Map<String, dynamic> j) => DoctorLite(
-        j['id'] as String,
-        j['userId'] as String?,
-        (j['fullName'] as String?) ?? 'Médico',
-        j['rqe'] as String?,
-        j['crm'] as String?,
-        consultationPriceCents: (j['consultationPriceCents'] as num?)?.toInt(),
-      );
-}
-
+/// Dados leves de clínica (ClinicResponse) para resolver nomes a partir do clinicId.
 class ClinicLite {
   const ClinicLite(this.id, this.corporateName);
   final String id;
