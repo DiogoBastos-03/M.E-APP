@@ -31,8 +31,9 @@ GRADLE_KTS = ROOT / "android" / "app" / "build.gradle.kts"
 GRADLE_GROOVY = ROOT / "android" / "app" / "build.gradle"
 GRADLE_PROPERTIES = ROOT / "android" / "gradle.properties"
 
-# API 24 e o minimo exigido pelo SDK do Jitsi.
-MIN_SDK = 24
+# API 26 e o minimo exigido pelo SDK do Jitsi (jitsi-meet-sdk 13.x). Abaixo
+# disso o merge de manifest aborta em :app:processReleaseMainManifest.
+MIN_SDK = 26
 
 # compileSdk minimo exigido pelos plugins do projeto. O template do Flutter usa
 # flutter.compileSdkVersion (36 hoje), mas flutter_secure_storage 11 exige 37 e
@@ -173,7 +174,7 @@ def ensure_manifest_label_override() -> None:
 
 
 def ensure_min_sdk(min_sdk: int) -> None:
-    """Eleva o minSdk do modulo app. O SDK do Jitsi exige API 24."""
+    """Eleva o minSdk do modulo app. O SDK do Jitsi exige API 26."""
     if GRADLE_KTS.exists():
         gradle_file = GRADLE_KTS
         pattern = r"minSdk\s*=\s*(?P<val>flutter\.minSdkVersion|\d+)"
