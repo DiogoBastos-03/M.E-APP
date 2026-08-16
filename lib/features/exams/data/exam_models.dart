@@ -12,6 +12,7 @@ class ExamResult {
     this.fileSizeBytes,
     required this.hasFile,
     this.uploadedByUserId,
+    this.uploadedByPatient = false,
     required this.createdAt,
   });
 
@@ -24,6 +25,9 @@ class ExamResult {
   final int? fileSizeBytes;
   final bool hasFile;
   final String? uploadedByUserId;
+
+  /// Enviado pelo próprio paciente, e não pela clínica.
+  final bool uploadedByPatient;
   final DateTime createdAt;
 
   static DateTime? _dt(dynamic v) =>
@@ -38,6 +42,7 @@ class ExamResult {
         fileContentType: j['fileContentType'] as String?,
         fileSizeBytes: (j['fileSizeBytes'] as num?)?.toInt(),
         hasFile: (j['hasFile'] as bool?) ?? false,
+        uploadedByPatient: (j['uploadedByPatient'] as bool?) ?? false,
         uploadedByUserId: j['uploadedByUserId'] as String?,
         createdAt: _dt(j['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
       );

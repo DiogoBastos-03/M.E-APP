@@ -29,6 +29,38 @@ class ProfileRepository {
     }
   }
 
+  Future<HealthDeclaration> getHealthDeclaration() async {
+    final r = await _dio.get('$_p/patients/me/health-declaration');
+    return HealthDeclaration.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  Future<HealthDeclaration> saveHealthDeclaration(HealthDeclaration declaration) async {
+    final r = await _dio.put('$_p/patients/me/health-declaration', data: declaration.toJson());
+    return HealthDeclaration.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  /// Envia um exame do próprio paciente. O backend só aceita o patientId dele.
+  Future<void> uploadExam({
+    required String patientId,
+    required String examType,
+    required List<int> bytes,
+    required String fileName,
+    String? notes,
+    DateTime? resultDate,
+  }) async {
+    final form = FormData.fromMap({
+      'patientId': patientId,
+      'examType': examType,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+      if (resultDate != null)
+        'resultDate': '${resultDate.year.toString().padLeft(4, '0')}'
+            '-${resultDate.month.toString().padLeft(2, '0')}'
+            '-${resultDate.day.toString().padLeft(2, '0')}',
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+    });
+    await _dio.post('$_p/exam-results', data: form);
+  }
+
   /// Altera a própria senha (paciente só altera a si mesmo).
   Future<void> changePassword(String userId, String newPassword) async {
     await _dio.put('$_p/users/$userId', data: {'newPassword': newPassword});

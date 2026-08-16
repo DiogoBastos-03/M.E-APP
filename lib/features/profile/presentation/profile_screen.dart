@@ -13,6 +13,8 @@ import '../../access/presentation/access_controller.dart' show Loading;
 import '../../access/presentation/widgets/access_common.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../data/profile_models.dart';
+import 'health_declaration_section.dart';
+import 'my_exams_section.dart';
 import 'profile_controller.dart';
 
 const _months = [
@@ -60,6 +62,10 @@ class ProfileScreen extends StatelessWidget {
         children: [
           _Header(patient: p),
           const SizedBox(height: 24),
+          HealthDeclarationSection(controller: c, health: c.health),
+          const SizedBox(height: 22),
+          MyExamsSection(controller: c),
+          const SizedBox(height: 22),
           _PersonalSection(patient: p),
           const SizedBox(height: 22),
           _HealthSection(health: c.health),

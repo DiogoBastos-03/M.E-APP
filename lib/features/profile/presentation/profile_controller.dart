@@ -14,6 +14,7 @@ class ProfileController extends ChangeNotifier {
   String? error;
   PatientAccount? patient;
   HealthRecord? health;
+  HealthDeclaration declaration = const HealthDeclaration();
 
   Future<void> load() async {
     state = Loading.loading;
@@ -22,9 +23,11 @@ class ProfileController extends ChangeNotifier {
       final results = await Future.wait([
         _repo.getPatient(),
         _repo.getHealthRecord(),
+        _repo.getHealthDeclaration(),
       ]);
       patient = results[0] as PatientAccount;
       health = results[1] as HealthRecord?;
+      declaration = results[2] as HealthDeclaration;
       state = Loading.ready;
     } on DioException catch (e) {
       error = _msg(e, 'Não foi possível carregar seu perfil.');
@@ -34,6 +37,42 @@ class ProfileController extends ChangeNotifier {
       state = Loading.error;
     }
     notifyListeners();
+  }
+
+  /// Salva a declaração de saúde. null = sucesso.
+  Future<String?> saveDeclaration(HealthDeclaration next) async {
+    try {
+      declaration = await _repo.saveHealthDeclaration(next);
+      notifyListeners();
+      return null;
+    } on DioException catch (e) {
+      return _msg(e, 'Não foi possível salvar seus dados de saúde.');
+    }
+  }
+
+  /// Envia um exame do próprio paciente. null = sucesso.
+  Future<String?> uploadExam({
+    required String examType,
+    required List<int> bytes,
+    required String fileName,
+    String? notes,
+    DateTime? resultDate,
+  }) async {
+    final p = patient;
+    if (p == null) return 'Perfil ainda não carregado.';
+    try {
+      await _repo.uploadExam(
+        patientId: p.id,
+        examType: examType,
+        bytes: bytes,
+        fileName: fileName,
+        notes: notes,
+        resultDate: resultDate,
+      );
+      return null;
+    } on DioException catch (e) {
+      return _msg(e, 'Não foi possível enviar o exame.');
+    }
   }
 
   /// null = sucesso; senão a mensagem de erro (do backend quando houver).
