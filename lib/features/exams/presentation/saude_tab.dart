@@ -19,6 +19,8 @@ import '../../health/presentation/rating_sheet.dart';
 import '../../health/presentation/schedule_screen.dart';
 import '../../home/data/home_models.dart';
 import '../../home/presentation/home_controller.dart';
+import '../../payments/presentation/payment_screen.dart';
+import '../../teleconsult/presentation/teleconsult_screen.dart';
 import '../data/exam_models.dart';
 import 'exam_detail_screen.dart';
 import 'exams_controller.dart';
@@ -555,6 +557,12 @@ class _ConsultaCard extends StatelessWidget {
                   ]),
               ],
             ),
+            if (appt.needsPayment || appt.isPaidTele) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 10),
+              _teleRow(context, doctor),
+            ],
             if (appt.status == ApptStatus.completed) ...[
               const SizedBox(height: 12),
               const Divider(height: 1, color: AppColors.border),
@@ -565,6 +573,72 @@ class _ConsultaCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _teleRow(BuildContext context, String doctor) {
+    if (appt.needsPayment) {
+      final amount = appt.payment!.amountCents;
+      return Row(
+        children: [
+          Expanded(
+            child: Text('Pagamento pendente · ${brl(amount)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.statePending)),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: () => _openPayment(context, doctor),
+            child: Text('Pagar agora',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.brand)),
+          ),
+        ],
+      );
+    }
+
+    if (appt.roomIsOpen) {
+      return SizedBox(
+        width: double.infinity,
+        height: 44,
+        child: ElevatedButton.icon(
+          onPressed: () => _openRoom(context, doctor),
+          icon: const Icon(Icons.videocam_outlined, size: 18),
+          label: const Text('Entrar na consulta'),
+        ),
+      );
+    }
+
+    if (appt.status == ApptStatus.scheduled) {
+      return Text('A sala abre 15 minutos antes do horário.',
+          style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary));
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Future<void> _openPayment(BuildContext context, String doctor) async {
+    final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => PaymentScreen(appointment: appt, doctorName: doctor),
+    ));
+    if (paid == true && context.mounted) {
+      await history.load();
+    }
+  }
+
+  Future<void> _openRoom(BuildContext context, String doctor) async {
+    final patientName = appt.patientNameShared
+        ? (context.read<HomeController>().patient?.fullName ?? 'Paciente')
+        : 'Paciente';
+    await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => TeleconsultScreen(
+        appointmentId: appt.id,
+        doctorName: doctor,
+        patientName: patientName,
+        onPayRequested: () => _openPayment(context, doctor),
+      ),
+    ));
+    if (context.mounted) await history.load();
   }
 
   Widget _reviewRow(BuildContext context, String doctor) {

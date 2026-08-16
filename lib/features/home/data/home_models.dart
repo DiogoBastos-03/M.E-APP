@@ -52,6 +52,56 @@ enum ApptStatus {
 }
 
 /// Consulta (AppointmentResponse do backend).
+enum PaymentState {
+  pending('PENDING'),
+  paid('PAID'),
+  refunded('REFUNDED'),
+  canceled('CANCELED'),
+  expired('EXPIRED'),
+  unknown('');
+
+  const PaymentState(this.wire);
+  final String wire;
+
+  static PaymentState fromWire(String? w) =>
+      PaymentState.values.firstWhere((s) => s.wire == w, orElse: () => PaymentState.unknown);
+}
+
+/// Pagamento da teleconsulta. Só acompanha a consulta quando o backend
+/// responde ao próprio paciente.
+class PaymentInfo {
+  const PaymentInfo({
+    required this.id,
+    required this.amountCents,
+    required this.currency,
+    required this.status,
+    this.checkoutUrl,
+    this.expiresAt,
+    this.paidAt,
+  });
+
+  final String id;
+  final int amountCents;
+  final String currency;
+  final PaymentState status;
+  final String? checkoutUrl;
+  final DateTime? expiresAt;
+  final DateTime? paidAt;
+
+  bool get isPending => status == PaymentState.pending;
+  bool get isPaid => status == PaymentState.paid;
+
+  factory PaymentInfo.fromJson(Map<String, dynamic> j) => PaymentInfo(
+        id: j['id'] as String,
+        amountCents: (j['amountCents'] as num?)?.toInt() ?? 0,
+        currency: (j['currency'] as String?) ?? 'BRL',
+        status: PaymentState.fromWire(j['status'] as String?),
+        checkoutUrl: j['checkoutUrl'] as String?,
+        expiresAt: DateTime.tryParse((j['expiresAt'] as String?) ?? '')?.toLocal(),
+        paidAt: DateTime.tryParse((j['paidAt'] as String?) ?? '')?.toLocal(),
+      );
+}
+
 class Appointment {
   const Appointment({
     required this.id,
@@ -60,7 +110,8 @@ class Appointment {
     required this.status,
     required this.start,
     required this.end,
-    this.paymentStatus,
+    this.payment,
+    this.patientNameShared = false,
   });
 
   final String id;
@@ -69,9 +120,10 @@ class Appointment {
   final ApptStatus status;
   final DateTime start;
   final DateTime end;
+  final PaymentInfo? payment;
 
-  /// Status do pagamento da teleconsulta (PENDING/PAID/REFUNDED/CANCELED), se houver.
-  final String? paymentStatus;
+  /// O paciente autorizou este médico a ver o nome dele nesta consulta.
+  final bool patientNameShared;
 
   static DateTime _dt(dynamic v) =>
       DateTime.tryParse(v?.toString() ?? '')?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -85,10 +137,26 @@ class Appointment {
       status: ApptStatus.fromWire(j['status'] as String?),
       start: _dt(j['startDatetime']),
       end: _dt(j['endDatetime']),
-      paymentStatus: payment is Map<String, dynamic> ? payment['status'] as String? : null,
+      payment: payment is Map<String, dynamic> ? PaymentInfo.fromJson(payment) : null,
+      patientNameShared: (j['patientNameShared'] as bool?) ?? false,
     );
   }
 
-  bool get isUpcoming => status == ApptStatus.scheduled && start.isAfter(DateTime.now());
-  bool get isPaymentPending => paymentStatus == 'PENDING';
+  /// Vale até o fim da consulta, não até o início: uma consulta em andamento
+  /// continua sendo a próxima — é justamente quando o paciente precisa entrar.
+  bool get isUpcoming => status == ApptStatus.scheduled && end.isAfter(DateTime.now());
+  bool get isPaymentPending => payment?.isPending ?? false;
+
+  bool get isTelemedicine => type == AppointmentType.telemedicine;
+  bool get needsPayment => isTelemedicine && isPaymentPending;
+  bool get isPaidTele => isTelemedicine && (payment?.isPaid ?? false);
+
+  /// A sala abre 15 minutos antes e fecha 30 minutos depois — a mesma janela
+  /// que o backend valida em GET /appointments/{id}/teleconsultation.
+  bool get roomIsOpen {
+    if (!isPaidTele || status != ApptStatus.scheduled) return false;
+    final now = DateTime.now();
+    return now.isAfter(start.subtract(const Duration(minutes: 15))) &&
+        now.isBefore(end.add(const Duration(minutes: 30)));
+  }
 }

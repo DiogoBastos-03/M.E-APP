@@ -6,7 +6,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../doctors/data/doctor_models.dart';
 import '../../doctors/presentation/doctor_picker_screen.dart';
 import '../../home/data/home_models.dart';
+import '../../payments/presentation/payment_screen.dart';
 import '../data/history_models.dart';
+import 'health_format.dart';
 import 'history_controller.dart';
 
 /// Formulário mínimo de agendamento — cria a consulta DE VERDADE (POST /appointments).
@@ -77,29 +79,48 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Future<void> _submit() async {
     final slot = _selectedSlot!;
+    final doctorName = _doctor!.fullName;
+
+    final autorizou = await _confirmNameSharing(doctorName);
+    if (autorizou != true || !mounted) return;
+
     setState(() => _submitting = true);
-    final err = await widget.controller.schedule(
+    final result = await widget.controller.schedule(
       patientId: widget.patientId,
       doctorId: _doctor!.id,
       type: _type,
       slot: slot,
+      sharePatientName: true,
     );
     if (!mounted) return;
     setState(() => _submitting = false);
-    if (err == null) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.tealDark,
-        content: Text('Consulta agendada com sucesso.', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
-      ));
-    } else {
+
+    final error = result.error;
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.stateDanger,
-        content: Text(err, style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+        content: Text(error, style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
       ));
+      return;
     }
+
+    final created = result.created;
+    Navigator.of(context).pop();
+
+    if (created != null && created.needsPayment) {
+      await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => PaymentScreen(appointment: created, doctorName: doctorName),
+      ));
+      await widget.controller.load();
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.tealDark,
+      content: Text('Consulta agendada com sucesso.', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+    ));
   }
 
   @override
@@ -164,6 +185,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 ],
               ),
             ),
+            if (_showsPrice) _priceSummary(),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
               child: SizedBox(
@@ -175,10 +197,89 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       ? const SizedBox(
                           width: 22, height: 22,
                           child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
-                      : const Text('Confirmar agendamento'),
+                      : Text(_showsPrice ? 'Confirmar e pagar' : 'Confirmar agendamento'),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// O nome do paciente só chega ao médico com autorização explícita, e ela é
+  /// dada aqui, por consulta. Sem o aceite, nada é enviado ao servidor.
+  Future<bool?> _confirmNameSharing(String doctorName) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusCard)),
+        title: Text('Compartilhar seu nome',
+            style: GoogleFonts.poppins(
+                fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Ao agendar, $doctorName passa a ver o seu nome nesta consulta.',
+                style: GoogleFonts.poppins(fontSize: 13.5, height: 1.5, color: AppColors.text)),
+            const SizedBox(height: 10),
+            Text('Vale só para esta consulta. Seu prontuário, exames e histórico '
+                'continuam privados até você liberar em Acessos.',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.5, height: 1.5, color: AppColors.textSecondary)),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancelar',
+                style: GoogleFonts.poppins(
+                    fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(minimumSize: const Size(140, 46)),
+            child: const Text('Autorizar e agendar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool get _showsPrice =>
+      _type == AppointmentType.telemedicine &&
+      _doctor?.consultationPriceCents != null &&
+      _selectedSlot != null;
+
+  Widget _priceSummary() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.section,
+          borderRadius: BorderRadius.circular(AppTheme.radiusInner),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Valor da teleconsulta',
+                    style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textSecondary)),
+                const Spacer(),
+                Text(brl(_doctor!.consultationPriceCents!),
+                    style: GoogleFonts.poppins(
+                        fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text('O pagamento é solicitado logo após a confirmação.',
+                style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.textSecondary)),
           ],
         ),
       ),
@@ -222,6 +323,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary)),
+                  if (doctor.acceptsTelemedicine) ...[
+                    const SizedBox(height: 2),
+                    Text('Teleconsulta ${brl(doctor.consultationPriceCents!)}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.tealDark)),
+                  ],
                 ],
               ),
             ),

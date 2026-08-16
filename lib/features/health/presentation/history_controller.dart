@@ -59,26 +59,30 @@ class HistoryController extends ChangeNotifier {
   Future<List<AvailableSlot>> loadSlots(String doctorId, DateTime date) =>
       _repo.getAvailableSlots(doctorId, date);
 
-  /// Agenda uma consulta de verdade no slot escolhido. Retorna null em sucesso
-  /// ou a mensagem de erro. Envia exatamente o start/end do slot.
-  Future<String?> schedule({
+  /// Agenda uma consulta de verdade no slot escolhido. Devolve a consulta
+  /// criada em sucesso, ou a mensagem de erro. Envia exatamente o start/end do
+  /// slot. A consulta criada é o único lugar onde o pagamento chega junto, e é
+  /// o que permite mandar o paciente direto para o pagamento.
+  Future<({String? error, Appointment? created})> schedule({
     required String patientId,
     required String doctorId,
     required AppointmentType type,
     required AvailableSlot slot,
+    required bool sharePatientName,
   }) async {
     try {
-      await _repo.createAppointment(
+      final created = await _repo.createAppointment(
         patientId: patientId,
         doctorId: doctorId,
         type: type,
         startIso: slot.startIso,
         endIso: slot.endIso,
+        sharePatientName: sharePatientName,
       );
       await load();
-      return null;
+      return (error: null, created: created);
     } on DioException catch (e) {
-      return _msg(e);
+      return (error: _msg(e), created: null);
     }
   }
 

@@ -31,12 +31,24 @@ GRADLE_KTS = ROOT / "android" / "app" / "build.gradle.kts"
 GRADLE_GROOVY = ROOT / "android" / "app" / "build.gradle"
 GRADLE_PROPERTIES = ROOT / "android" / "gradle.properties"
 
+# API 24 e o minimo exigido pelo SDK do Jitsi.
+MIN_SDK = 24
+
 # compileSdk minimo exigido pelos plugins do projeto. O template do Flutter usa
 # flutter.compileSdkVersion (36 hoje), mas flutter_secure_storage 11 exige 37 e
 # o build falha em :app:checkReleaseAarMetadata sem esse ajuste.
 DEFAULT_COMPILE_SDK = 37
 
 INTERNET_PERMISSION = '    <uses-permission android:name="android.permission.INTERNET"/>'
+
+# O SDK do Jitsi precisa de camera e microfone para a teleconsulta.
+PERMISSIONS = (
+    "android.permission.INTERNET",
+    "android.permission.CAMERA",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.MODIFY_AUDIO_SETTINGS",
+)
+TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"'
 
 LOADER_KTS = """
 // [CI] Assinatura de release lida de android/key.properties (ver .github/workflows/build-apk.yml).
@@ -88,26 +100,103 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
-def ensure_internet_permission() -> None:
+def ensure_permissions() -> None:
+    """Declara no manifest as permissoes que o app precisa em runtime.
+
+    A pasta android/ e gerada pelo `flutter create` a cada build, entao o
+    manifest volta ao template e estas permissoes tem de ser reinjetadas aqui.
+    """
     if not MANIFEST.exists():
         fail(f"AndroidManifest.xml não encontrado em {MANIFEST.relative_to(ROOT)}")
 
     text = MANIFEST.read_text(encoding="utf-8")
-    if "android.permission.INTERNET" in text:
-        log("permissão INTERNET já declarada no manifest principal.")
+    added = []
+
+    for permission in PERMISSIONS:
+        if permission in text:
+            continue
+        line = f'    <uses-permission android:name="{permission}"/>'
+        text, count = re.subn(
+            r"(<manifest\b[^>]*>)",
+            lambda m: f"{m.group(1)}\n{line}",
+            text,
+            count=1,
+        )
+        if count == 0:
+            fail("não foi possível localizar a tag <manifest> para inserir as permissões.")
+        added.append(permission.rsplit(".", 1)[-1])
+
+    MANIFEST.write_text(text, encoding="utf-8")
+    if added:
+        log(f"permissões adicionadas ao manifest: {', '.join(added)}.")
+    else:
+        log("permissões já declaradas no manifest principal.")
+
+
+def ensure_manifest_label_override() -> None:
+    """Resolve o conflito de android:label entre o app e o AAR do Jitsi.
+
+    O SDK do Jitsi declara android:label no seu <application>. Sem
+    tools:replace o merge de manifest aborta o build com
+    "Attribute application@label value=... is also present at ...".
+    """
+    text = MANIFEST.read_text(encoding="utf-8")
+
+    if TOOLS_NAMESPACE not in text:
+        text, count = re.subn(
+            r"(<manifest\b)",
+            lambda m: f"{m.group(1)} {TOOLS_NAMESPACE}",
+            text,
+            count=1,
+        )
+        if count == 0:
+            fail("não foi possível declarar o namespace tools no manifest.")
+
+    if 'tools:replace="android:label"' not in text:
+        match = re.search(r"<application\b", text)
+        if match is None:
+            fail("tag <application> não encontrada no manifest.")
+        text, count = re.subn(
+            r"(<application\b)",
+            lambda m: f'{m.group(1)} tools:replace="android:label"',
+            text,
+            count=1,
+        )
+        if count == 0:
+            fail("não foi possível aplicar tools:replace no <application>.")
+        MANIFEST.write_text(text, encoding="utf-8")
+        log("tools:replace=\"android:label\" aplicado ao <application>.")
         return
 
-    patched, count = re.subn(
-        r"(<manifest\b[^>]*>)",
-        lambda m: f"{m.group(1)}\n{INTERNET_PERMISSION}",
-        text,
-        count=1,
-    )
-    if count == 0:
-        fail("não foi possível localizar a tag <manifest> para inserir a permissão INTERNET.")
+    MANIFEST.write_text(text, encoding="utf-8")
+    log("tools:replace já presente no <application>.")
 
-    MANIFEST.write_text(patched, encoding="utf-8")
-    log("permissão INTERNET adicionada ao manifest principal.")
+
+def ensure_min_sdk(min_sdk: int) -> None:
+    """Eleva o minSdk do modulo app. O SDK do Jitsi exige API 24."""
+    if GRADLE_KTS.exists():
+        gradle_file = GRADLE_KTS
+        pattern = r"minSdk\s*=\s*(?P<val>flutter\.minSdkVersion|\d+)"
+        replacement = f"minSdk = {min_sdk}"
+    elif GRADLE_GROOVY.exists():
+        gradle_file = GRADLE_GROOVY
+        pattern = r"minSdk(?:Version)?\s+(?P<val>flutter\.minSdkVersion|\d+)"
+        replacement = f"minSdk {min_sdk}"
+    else:
+        fail("nenhum build.gradle(.kts) encontrado em android/app/.")
+
+    text = gradle_file.read_text(encoding="utf-8")
+    match = re.search(pattern, text)
+    if match is None:
+        fail(f"declaracao de minSdk nao encontrada em {gradle_file.name}.")
+
+    current = match.group("val")
+    if current.isdigit() and int(current) >= min_sdk:
+        log(f"minSdk ja e {current} (>= {min_sdk}) — mantido.")
+        return
+
+    gradle_file.write_text(text[: match.start()] + replacement + text[match.end() :], encoding="utf-8")
+    log(f"minSdk elevado de {current} para {min_sdk} em {gradle_file.name}.")
 
 
 def ensure_compile_sdk(min_sdk: int) -> None:
@@ -217,7 +306,9 @@ def main() -> None:
     if not (ROOT / "android").is_dir():
         fail("pasta android/ não existe — rode `flutter create --platforms=android .` antes.")
 
-    ensure_internet_permission()
+    ensure_permissions()
+    ensure_manifest_label_override()
+    ensure_min_sdk(MIN_SDK)
     ensure_compile_sdk(args.compile_sdk)
 
     if args.signing:

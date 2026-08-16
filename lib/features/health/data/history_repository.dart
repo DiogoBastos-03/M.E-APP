@@ -38,6 +38,7 @@ class HistoryRepository {
     required AppointmentType type,
     required String startIso,
     required String endIso,
+    required bool sharePatientName,
   }) async {
     final r = await _dio.post('$_p/appointments', data: {
       'patientId': patientId,
@@ -45,6 +46,7 @@ class HistoryRepository {
       'appointmentType': type.wire,
       'startDatetime': startIso,
       'endDatetime': endIso,
+      'sharePatientName': sharePatientName,
     });
     return Appointment.fromJson(r.data as Map<String, dynamic>);
   }

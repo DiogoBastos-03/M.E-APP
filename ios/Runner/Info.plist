@@ -9,6 +9,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>O M.E Saúde usa a câmera para você participar da teleconsulta por vídeo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O M.E Saúde usa o microfone para você falar com o médico durante a teleconsulta.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

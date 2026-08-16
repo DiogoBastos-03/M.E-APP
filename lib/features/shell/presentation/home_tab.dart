@@ -10,8 +10,9 @@ import '../../access/presentation/access_controller.dart';
 import '../../access/presentation/decision_screen.dart';
 import '../../access/presentation/widgets/access_common.dart';
 import '../../auth/presentation/auth_controller.dart';
-import '../../home/presentation/home_controller.dart';
 import '../../home/data/home_models.dart';
+import '../../home/presentation/home_controller.dart';
+import '../../teleconsult/presentation/teleconsult_screen.dart';
 import 'shell_controller.dart';
 
 const _weekdays = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
@@ -445,35 +446,80 @@ class _NextAppointmentCard extends StatelessWidget {
           : GestureDetector(
               onTap: () => shell.setTab(ShellController.tabSaude),
               child: AccessCard(
-                child: Row(
+                child: Column(
                   children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(color: AppColors.brandTint, borderRadius: BorderRadius.circular(14)),
-                      child: Icon(next.type.icon, color: AppColors.brandDark, size: 24),
+                    Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration:
+                              BoxDecoration(color: AppColors.brandTint, borderRadius: BorderRadius.circular(14)),
+                          child: Icon(next.type.icon, color: AppColors.brandDark, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(access.doctorNameById(next.doctorId) ?? next.type.label,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 14.5, fontWeight: FontWeight.w600, color: AppColors.text)),
+                              const SizedBox(height: 2),
+                              Text(_friendlyDateTime(next.start),
+                                  style: GoogleFonts.poppins(fontSize: 12.5, color: AppColors.textSecondary)),
+                            ],
+                          ),
+                        ),
+                        _TypePill(type: next.type),
+                      ],
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    if (next.roomIsOpen) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _enterRoom(context, next,
+                              access.doctorNameById(next.doctorId) ?? 'Médico(a)'),
+                          icon: const Icon(Icons.videocam_outlined, size: 18),
+                          label: const Text('Entrar na consulta'),
+                        ),
+                      ),
+                    ] else if (next.needsPayment) ...[
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          Text(access.doctorNameById(next.doctorId) ?? next.type.label,
+                          Expanded(
+                            child: Text('Pagamento pendente',
+                                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.statePending)),
+                          ),
+                          Text('Ver na aba Saúde',
                               style: GoogleFonts.poppins(
-                                  fontSize: 14.5, fontWeight: FontWeight.w600, color: AppColors.text)),
-                          const SizedBox(height: 2),
-                          Text(_friendlyDateTime(next.start),
-                              style: GoogleFonts.poppins(fontSize: 12.5, color: AppColors.textSecondary)),
+                                  fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.brand)),
                         ],
                       ),
-                    ),
-                    _TypePill(type: next.type),
+                    ],
                   ],
                 ),
               ),
             ),
     );
   }
+}
+
+Future<void> _enterRoom(BuildContext context, Appointment appt, String doctorName) async {
+  final patientName = appt.patientNameShared
+      ? (context.read<HomeController>().patient?.fullName ?? 'Paciente')
+      : 'Paciente';
+  await Navigator.of(context).push<bool>(MaterialPageRoute(
+    builder: (_) => TeleconsultScreen(
+      appointmentId: appt.id,
+      doctorName: doctorName,
+      patientName: patientName,
+    ),
+  ));
+  if (context.mounted) await context.read<HomeController>().load();
 }
 
 class _TypePill extends StatelessWidget {
