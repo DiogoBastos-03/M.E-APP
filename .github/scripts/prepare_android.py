@@ -10,7 +10,11 @@ O script é idempotente e funciona tanto sobre um android/ recém-criado por
    chamada à API.
 2. Eleva o compileSdk quando algum plugin exige mais que o padrão do template
    (flutter_secure_storage 11 exige 37; o template compila contra 36).
-3. Com --signing, configura a assinatura de release lendo android/key.properties
+3. Eleva o compileSdk também nos módulos dos plugins (o jitsi_meet_flutter_sdk
+   fixa 34, mas as dependências dele exigem 35+).
+4. Escreve as regras de ProGuard que o R8 precisa para minificar o release com
+   o SDK do Jitsi no classpath.
+5. Com --signing, configura a assinatura de release lendo android/key.properties
    (escrito pelo workflow a partir dos secrets). Sem a flag, o release continua
    assinado com a chave debug, que é o padrão do template.
 
@@ -30,6 +34,9 @@ MANIFEST = ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
 GRADLE_KTS = ROOT / "android" / "app" / "build.gradle.kts"
 GRADLE_GROOVY = ROOT / "android" / "app" / "build.gradle"
 GRADLE_PROPERTIES = ROOT / "android" / "gradle.properties"
+ROOT_GRADLE_KTS = ROOT / "android" / "build.gradle.kts"
+ROOT_GRADLE_GROOVY = ROOT / "android" / "build.gradle"
+PROGUARD_RULES = ROOT / "android" / "app" / "proguard-rules.pro"
 
 # API 26 e o minimo exigido pelo SDK do Jitsi (jitsi-meet-sdk 13.x). Abaixo
 # disso o merge de manifest aborta em :app:processReleaseMainManifest.
@@ -89,6 +96,70 @@ SIGNING_GROOVY = """
             storePassword meKeystoreProperties['storePassword']
         }
     }
+"""
+
+
+# Marcador de idempotencia: se ja estiver no arquivo, o bloco nao e reinjetado.
+SUBPROJECTS_MARKER = "[CI] compileSdk dos plugins"
+
+SUBPROJECTS_KTS = """
+// [CI] compileSdk dos plugins. O jitsi_meet_flutter_sdk fixa compileSdk 34, mas
+// as dependencias dele (androidx.media3 1.8, androidx.core 1.16) exigem 35+ e o
+// build morre em :jitsi_meet_flutter_sdk:checkReleaseAarMetadata. O ajuste feito
+// em app/build.gradle.kts nao alcanca os modulos dos plugins, entao e aqui que
+// ele precisa ser aplicado.
+subprojects {
+    afterEvaluate {
+        val meAndroid = extensions.findByName("android") ?: return@afterEvaluate
+        // O setter muda entre versoes do AGP; tenta os conhecidos, em ordem.
+        val meSetters: List<() -> Unit> = listOf(
+            { meAndroid.javaClass.getMethod("setCompileSdk", Integer::class.java)
+                .invoke(meAndroid, __COMPILE_SDK__) },
+            { meAndroid.javaClass.getMethod("setCompileSdkVersion", String::class.java)
+                .invoke(meAndroid, "android-__COMPILE_SDK__") },
+            { meAndroid.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType!!)
+                .invoke(meAndroid, __COMPILE_SDK__) },
+        )
+        for (meSetter in meSetters) {
+            try {
+                meSetter()
+                break
+            } catch (_: Exception) {
+                // Setter inexistente nesta versao do AGP - tenta o proximo.
+            }
+        }
+    }
+}
+"""
+
+SUBPROJECTS_GROOVY = """
+// [CI] compileSdk dos plugins. O jitsi_meet_flutter_sdk fixa compileSdk 34, mas
+// as dependencias dele (androidx.media3 1.8, androidx.core 1.16) exigem 35+ e o
+// build morre em :jitsi_meet_flutter_sdk:checkReleaseAarMetadata.
+subprojects {
+    afterEvaluate { meProject ->
+        if (meProject.extensions.findByName('android') != null) {
+            meProject.android.compileSdkVersion __COMPILE_SDK__
+        }
+    }
+}
+"""
+
+PROGUARD_MARKER = "# [CI] Regras do R8 para o SDK do Jitsi"
+
+PROGUARD_BODY = """
+# [CI] Regras do R8 para o SDK do Jitsi (ver .github/scripts/prepare_android.py).
+# O SDK do Giphy, que entra como dependencia do Jitsi, referencia
+# kotlinx.parcelize.Parcelize sem trazer a anotacao no classpath. O R8 trata
+# classe ausente como erro e aborta :app:minifyReleaseWithR8.
+-dontwarn kotlinx.parcelize.**
+-dontwarn com.giphy.sdk.**
+
+# Jitsi e a camada React Native embaixo dele carregam classes por reflexao; sem
+# estes keeps o APK compila mas quebra em runtime ao abrir a teleconsulta.
+-keep class org.jitsi.meet.** { *; }
+-keep class org.webrtc.** { *; }
+-keep class com.facebook.react.** { *; }
 """
 
 
@@ -244,6 +315,79 @@ def ensure_compile_sdk(min_sdk: int) -> None:
         log(f"{suppress_key}={min_sdk} adicionado a gradle.properties.")
 
 
+def ensure_subprojects_compile_sdk(compile_sdk: int) -> None:
+    """Eleva o compileSdk de todos os modulos, nao so o do app.
+
+    Cada plugin Flutter traz o proprio build.gradle dentro do .pub-cache, com o
+    compileSdk fixo. O jitsi_meet_flutter_sdk usa 34, e as dependencias dele
+    exigem 35+, entao o build falha em checkReleaseAarMetadata do modulo do
+    plugin. Como o .pub-cache e recriado a cada build, a correcao vai no
+    build.gradle raiz do android/, que alcanca todos os subprojetos.
+    """
+    if ROOT_GRADLE_KTS.exists():
+        gradle_file, block = ROOT_GRADLE_KTS, SUBPROJECTS_KTS
+    elif ROOT_GRADLE_GROOVY.exists():
+        gradle_file, block = ROOT_GRADLE_GROOVY, SUBPROJECTS_GROOVY
+    else:
+        fail("nenhum build.gradle(.kts) encontrado na raiz de android/.")
+
+    text = gradle_file.read_text(encoding="utf-8")
+    if SUBPROJECTS_MARKER in text:
+        log(f"compileSdk dos plugins ja forcado em {gradle_file.name} — mantido.")
+        return
+
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += block.replace("__COMPILE_SDK__", str(compile_sdk))
+    gradle_file.write_text(text, encoding="utf-8")
+    log(f"compileSdk dos plugins forcado para {compile_sdk} em {gradle_file.name}.")
+
+
+def ensure_proguard_rules() -> None:
+    """Escreve proguard-rules.pro e liga o arquivo ao buildType release.
+
+    O release roda o R8, que aborta ao encontrar referencia a uma classe ausente
+    (kotlinx.parcelize.Parcelize, vinda do SDK do Giphy que o Jitsi carrega).
+    """
+    if PROGUARD_RULES.exists():
+        rules = PROGUARD_RULES.read_text(encoding="utf-8")
+    else:
+        rules = ""
+
+    if PROGUARD_MARKER in rules:
+        log("proguard-rules.pro ja contem as regras do Jitsi — mantido.")
+    else:
+        if rules and not rules.endswith("\n"):
+            rules += "\n"
+        PROGUARD_RULES.write_text(rules + PROGUARD_BODY, encoding="utf-8")
+        log("regras do R8 escritas em app/proguard-rules.pro.")
+
+    if GRADLE_KTS.exists():
+        gradle_file = GRADLE_KTS
+        line = '            proguardFiles("proguard-rules.pro")'
+    elif GRADLE_GROOVY.exists():
+        gradle_file = GRADLE_GROOVY
+        line = "            proguardFiles 'proguard-rules.pro'"
+    else:
+        fail("nenhum build.gradle(.kts) encontrado em android/app/.")
+
+    text = gradle_file.read_text(encoding="utf-8")
+    if "proguard-rules.pro" in text:
+        log(f"{gradle_file.name} ja referencia proguard-rules.pro — mantido.")
+        return
+
+    # O template declara `buildTypes { release { ... } }`; a forma
+    # `getByName("release")` aparece em projetos ja customizados.
+    pattern = r"buildTypes\s*\{\s*(?:getByName\(\s*\"release\"\s*\)|release)\s*\{"
+    match = re.search(pattern, text)
+    if match is None:
+        fail(f"buildType release nao encontrado em {gradle_file.name}.")
+
+    text = text[: match.end()] + "\n" + line + text[match.end() :]
+    gradle_file.write_text(text, encoding="utf-8")
+    log(f"proguard-rules.pro ligado ao buildType release em {gradle_file.name}.")
+
+
 def configure_signing() -> None:
     if GRADLE_KTS.exists():
         gradle_file, loader, signing = GRADLE_KTS, LOADER_KTS, SIGNING_KTS
@@ -311,6 +455,8 @@ def main() -> None:
     ensure_manifest_label_override()
     ensure_min_sdk(MIN_SDK)
     ensure_compile_sdk(args.compile_sdk)
+    ensure_subprojects_compile_sdk(args.compile_sdk)
+    ensure_proguard_rules()
 
     if args.signing:
         configure_signing()
