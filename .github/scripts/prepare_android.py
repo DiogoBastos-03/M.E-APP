@@ -10,8 +10,8 @@ O script é idempotente e funciona tanto sobre um android/ recém-criado por
    chamada à API.
 2. Eleva o compileSdk quando algum plugin exige mais que o padrão do template
    (flutter_secure_storage 11 exige 37; o template compila contra 36).
-3. Eleva o compileSdk também nos módulos dos plugins (o jitsi_meet_flutter_sdk
-   fixa 34, mas as dependências dele exigem 35+).
+3. Eleva o compileSdk fixo declarado pelos plugins no .pub-cache (o
+   jitsi_meet_flutter_sdk fixa 34, mas as dependências dele exigem 35+).
 4. Escreve as regras de ProGuard que o R8 precisa para minificar o release com
    o SDK do Jitsi no classpath.
 5. Com --signing, configura a assinatura de release lendo android/key.properties
@@ -25,6 +25,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -34,8 +35,6 @@ MANIFEST = ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
 GRADLE_KTS = ROOT / "android" / "app" / "build.gradle.kts"
 GRADLE_GROOVY = ROOT / "android" / "app" / "build.gradle"
 GRADLE_PROPERTIES = ROOT / "android" / "gradle.properties"
-ROOT_GRADLE_KTS = ROOT / "android" / "build.gradle.kts"
-ROOT_GRADLE_GROOVY = ROOT / "android" / "build.gradle"
 PROGUARD_RULES = ROOT / "android" / "app" / "proguard-rules.pro"
 
 # API 26 e o minimo exigido pelo SDK do Jitsi (jitsi-meet-sdk 13.x). Abaixo
@@ -98,52 +97,6 @@ SIGNING_GROOVY = """
     }
 """
 
-
-# Marcador de idempotencia: se ja estiver no arquivo, o bloco nao e reinjetado.
-SUBPROJECTS_MARKER = "[CI] compileSdk dos plugins"
-
-SUBPROJECTS_KTS = """
-// [CI] compileSdk dos plugins. O jitsi_meet_flutter_sdk fixa compileSdk 34, mas
-// as dependencias dele (androidx.media3 1.8, androidx.core 1.16) exigem 35+ e o
-// build morre em :jitsi_meet_flutter_sdk:checkReleaseAarMetadata. O ajuste feito
-// em app/build.gradle.kts nao alcanca os modulos dos plugins, entao e aqui que
-// ele precisa ser aplicado.
-subprojects {
-    afterEvaluate {
-        val meAndroid = extensions.findByName("android") ?: return@afterEvaluate
-        // O setter muda entre versoes do AGP; tenta os conhecidos, em ordem.
-        val meSetters: List<() -> Unit> = listOf(
-            { meAndroid.javaClass.getMethod("setCompileSdk", Integer::class.java)
-                .invoke(meAndroid, __COMPILE_SDK__) },
-            { meAndroid.javaClass.getMethod("setCompileSdkVersion", String::class.java)
-                .invoke(meAndroid, "android-__COMPILE_SDK__") },
-            { meAndroid.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType!!)
-                .invoke(meAndroid, __COMPILE_SDK__) },
-        )
-        for (meSetter in meSetters) {
-            try {
-                meSetter()
-                break
-            } catch (_: Exception) {
-                // Setter inexistente nesta versao do AGP - tenta o proximo.
-            }
-        }
-    }
-}
-"""
-
-SUBPROJECTS_GROOVY = """
-// [CI] compileSdk dos plugins. O jitsi_meet_flutter_sdk fixa compileSdk 34, mas
-// as dependencias dele (androidx.media3 1.8, androidx.core 1.16) exigem 35+ e o
-// build morre em :jitsi_meet_flutter_sdk:checkReleaseAarMetadata.
-subprojects {
-    afterEvaluate { meProject ->
-        if (meProject.extensions.findByName('android') != null) {
-            meProject.android.compileSdkVersion __COMPILE_SDK__
-        }
-    }
-}
-"""
 
 PROGUARD_MARKER = "# [CI] Regras do R8 para o SDK do Jitsi"
 
@@ -315,32 +268,66 @@ def ensure_compile_sdk(min_sdk: int) -> None:
         log(f"{suppress_key}={min_sdk} adicionado a gradle.properties.")
 
 
-def ensure_subprojects_compile_sdk(compile_sdk: int) -> None:
-    """Eleva o compileSdk de todos os modulos, nao so o do app.
+def ensure_plugin_compile_sdk(compile_sdk: int) -> None:
+    """Eleva o compileSdk fixo declarado pelos plugins Flutter.
 
-    Cada plugin Flutter traz o proprio build.gradle dentro do .pub-cache, com o
-    compileSdk fixo. O jitsi_meet_flutter_sdk usa 34, e as dependencias dele
-    exigem 35+, entao o build falha em checkReleaseAarMetadata do modulo do
-    plugin. Como o .pub-cache e recriado a cada build, a correcao vai no
-    build.gradle raiz do android/, que alcanca todos os subprojetos.
+    Cada plugin traz o proprio build.gradle dentro do .pub-cache. O
+    jitsi_meet_flutter_sdk fixa `compileSdkVersion 34`, mas as dependencias dele
+    (androidx.media3 1.8, androidx.core 1.16) exigem 35+, e o build morre em
+    :jitsi_meet_flutter_sdk:checkReleaseAarMetadata. O compileSdk do modulo app
+    nao alcanca os modulos dos plugins.
+
+    A alternativa seria um `subprojects { afterEvaluate { ... } }` no
+    build.gradle raiz, mas o template do Flutter ja avalia o :app ali
+    (evaluationDependsOn), e registrar afterEvaluate em projeto ja avaliado e
+    erro em Gradle. Patchar o arquivo do plugin e deterministico e nao depende
+    da ordem de avaliacao.
+
+    Os plugins e seus caminhos saem de .flutter-plugins-dependencies, gerado
+    pelo `flutter pub get` que roda antes deste script no workflow.
     """
-    if ROOT_GRADLE_KTS.exists():
-        gradle_file, block = ROOT_GRADLE_KTS, SUBPROJECTS_KTS
-    elif ROOT_GRADLE_GROOVY.exists():
-        gradle_file, block = ROOT_GRADLE_GROOVY, SUBPROJECTS_GROOVY
+    manifest = ROOT / ".flutter-plugins-dependencies"
+    if not manifest.exists():
+        fail(
+            ".flutter-plugins-dependencies nao encontrado — rode `flutter pub get` "
+            "antes deste script."
+        )
+
+    try:
+        plugins = json.loads(manifest.read_text(encoding="utf-8"))["plugins"]["android"]
+    except (json.JSONDecodeError, KeyError) as error:
+        fail(f"nao consegui ler os plugins android de .flutter-plugins-dependencies: {error}")
+
+    # Aceita `compileSdk 34`, `compileSdk = 34` e `compileSdkVersion 34`. A
+    # forma nao numerica (flutter.compileSdkVersion, project.ext.compileSdk)
+    # nao casa de proposito: ela ja segue o valor do app.
+    pattern = re.compile(r"(compileSdk(?:Version)?\s*=?\s*)(\d+)")
+
+    raised = []
+    for plugin in plugins:
+        name = plugin.get("name", "?")
+        base = Path(plugin["path"]) / "android"
+        for candidate in (base / "build.gradle", base / "build.gradle.kts"):
+            if not candidate.exists():
+                continue
+
+            text = candidate.read_text(encoding="utf-8")
+            match = pattern.search(text)
+            if match is None:
+                continue
+
+            current = int(match.group(2))
+            if current >= compile_sdk:
+                continue
+
+            patched = text[: match.start()] + match.group(1) + str(compile_sdk) + text[match.end() :]
+            candidate.write_text(patched, encoding="utf-8")
+            raised.append(f"{name} ({current} -> {compile_sdk})")
+
+    if raised:
+        log(f"compileSdk elevado nos plugins: {', '.join(raised)}.")
     else:
-        fail("nenhum build.gradle(.kts) encontrado na raiz de android/.")
-
-    text = gradle_file.read_text(encoding="utf-8")
-    if SUBPROJECTS_MARKER in text:
-        log(f"compileSdk dos plugins ja forcado em {gradle_file.name} — mantido.")
-        return
-
-    if text and not text.endswith("\n"):
-        text += "\n"
-    text += block.replace("__COMPILE_SDK__", str(compile_sdk))
-    gradle_file.write_text(text, encoding="utf-8")
-    log(f"compileSdk dos plugins forcado para {compile_sdk} em {gradle_file.name}.")
+        log(f"nenhum plugin com compileSdk abaixo de {compile_sdk}.")
 
 
 def ensure_proguard_rules() -> None:
@@ -455,7 +442,7 @@ def main() -> None:
     ensure_manifest_label_override()
     ensure_min_sdk(MIN_SDK)
     ensure_compile_sdk(args.compile_sdk)
-    ensure_subprojects_compile_sdk(args.compile_sdk)
+    ensure_plugin_compile_sdk(args.compile_sdk)
     ensure_proguard_rules()
 
     if args.signing:
