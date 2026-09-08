@@ -8,7 +8,9 @@ class ShellController extends ChangeNotifier {
   static const int tabInicio = 0;
   static const int tabAcessos = 1;
   static const int tabSaude = 2;
-  static const int tabPerfil = 3;
+  static const int tabFitness = 3;
+  // Perfil não aparece na barra inferior; é alcançado via avatar da Home.
+  static const int tabPerfil = 4;
 
   // Segmentos da aba Acessos
   static const int segPedidos = 0;

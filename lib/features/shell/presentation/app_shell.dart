@@ -13,6 +13,7 @@ import '../../documents/presentation/medical_documents_controller.dart';
 import '../../exams/data/exams_repository.dart';
 import '../../exams/presentation/exams_controller.dart';
 import '../../exams/presentation/saude_tab.dart';
+import '../../fitness/presentation/fitness_tab.dart';
 import '../../health/data/history_repository.dart';
 import '../../health/presentation/history_controller.dart';
 import '../../home/data/home_repository.dart';
@@ -73,18 +74,22 @@ class AppShell extends StatelessWidget {
 class _ShellScaffold extends StatelessWidget {
   const _ShellScaffold();
 
+  // 5 telas no IndexedStack; o Perfil (índice 4) NÃO tem item na barra inferior —
+  // é aberto pelo avatar no topo da Home via setTab(tabPerfil).
   static const _tabs = <Widget>[
     HomeTab(),
     AccessTab(),
     SaudeTab(),
+    FitnessTab(),
     ProfileScreen(),
   ];
 
+  // A barra inferior renderiza só estes 4 itens (índices 0..3).
   static const _items = <_NavItem>[
     _NavItem('Início', Icons.home_outlined, Icons.home),
     _NavItem('Acessos', Icons.shield_outlined, Icons.shield),
     _NavItem('Saúde', Icons.favorite_border, Icons.favorite),
-    _NavItem('Perfil', Icons.person_outline, Icons.person),
+    _NavItem('Fitness', Icons.fitness_center_outlined, Icons.fitness_center),
   ];
 
   @override

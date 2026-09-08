@@ -92,7 +92,7 @@ class _Header extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const MeLogo(height: 58),
+            const MeLogo(height: 70),
             GestureDetector(
               onTap: () => context.read<ShellController>().setTab(ShellController.tabPerfil),
               child: InitialsAvatar(initials: initials, size: 44),
