@@ -54,6 +54,19 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
+
+# Ícones de launcher/lojas. Fonte cheia (edge-to-edge), sem transparência no iOS.
+# Gere com: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  # iOS + Android legado: gradiente opaco preenchendo tudo, "me" branco centralizado.
+  image_path: "assets/icon/icon_source.png"
+  remove_alpha_ios: true
+  # Android adaptativo: fundo = gradiente cheio; frente = "me" branco na zona segura.
+  adaptive_icon_background: "assets/icon/icon_bg.png"
+  adaptive_icon_foreground: "assets/icon/icon_fg.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

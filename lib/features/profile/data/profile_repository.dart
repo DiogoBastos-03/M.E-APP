@@ -29,9 +29,17 @@ class ProfileRepository {
     }
   }
 
+  /// Declaração de saúde do paciente. Best-effort: este backend ainda não expõe
+  /// o endpoint (não existe rota `/patients/me/health-declaration`), então
+  /// qualquer erro/ausência vira uma declaração vazia — sem derrubar o carregamento
+  /// do Perfil (dados pessoais + prontuário continuam carregando).
   Future<HealthDeclaration> getHealthDeclaration() async {
-    final r = await _dio.get('$_p/patients/me/health-declaration');
-    return HealthDeclaration.fromJson(r.data as Map<String, dynamic>);
+    try {
+      final r = await _dio.get('$_p/patients/me/health-declaration');
+      return HealthDeclaration.fromJson(r.data as Map<String, dynamic>);
+    } on DioException {
+      return const HealthDeclaration();
+    }
   }
 
   Future<HealthDeclaration> saveHealthDeclaration(HealthDeclaration declaration) async {

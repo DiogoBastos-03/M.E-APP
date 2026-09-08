@@ -9,7 +9,6 @@ import '../../access/data/access_models.dart';
 import '../../access/presentation/access_controller.dart';
 import '../../access/presentation/decision_screen.dart';
 import '../../access/presentation/widgets/access_common.dart';
-import '../../auth/presentation/auth_controller.dart';
 import '../../home/data/home_models.dart';
 import '../../home/presentation/home_controller.dart';
 import '../../teleconsult/presentation/teleconsult_screen.dart';
@@ -93,9 +92,9 @@ class _Header extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const MeLogo(height: 30),
+            const MeLogo(height: 58),
             GestureDetector(
-              onTap: () => _showAccountSheet(context),
+              onTap: () => context.read<ShellController>().setTab(ShellController.tabPerfil),
               child: InitialsAvatar(initials: initials, size: 44),
             ),
           ],
@@ -110,46 +109,6 @@ class _Header extends StatelessWidget {
     );
   }
 
-  void _showAccountSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.radiusCard)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(999)),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    context.read<AuthController>().logout();
-                  },
-                  icon: const Icon(Icons.logout, color: AppColors.stateDanger),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.stateDanger,
-                    side: const BorderSide(color: AppColors.stateDanger, width: 1.5),
-                  ),
-                  label: const Text('Sair da conta'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // --------------------------------------------------------------------------- //

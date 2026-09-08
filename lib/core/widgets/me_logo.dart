@@ -9,7 +9,7 @@ class MeLogo extends StatelessWidget {
 
   final double height;
 
-  static const _asset = 'assets/images/me-logo-trimmed.png';
+  static const _asset = 'assets/images/logo-me-sem-fundo.png';
 
   @override
   Widget build(BuildContext context) {

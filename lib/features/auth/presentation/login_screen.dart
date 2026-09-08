@@ -81,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // --- Bloco marca (topo) ---
-                          const MeLogo(height: 54),
+                          const MeLogo(height: 64),
                           const SizedBox(height: 16),
                           Text(
                             'Sua saúde é sua.\nSó sua.',

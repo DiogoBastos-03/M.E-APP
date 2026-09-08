@@ -32,10 +32,15 @@ class _TypeFilterDropdownState extends State<TypeFilterDropdown>
     with SingleTickerProviderStateMixin {
   final LayerLink _link = LayerLink();
   final GlobalKey _triggerKey = GlobalKey();
-  late final AnimationController _anim =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+  late final AnimationController _anim;
   OverlayEntry? _entry;
   double _width = 240;
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+  }
 
   bool get _isOpen => _entry != null;
 
